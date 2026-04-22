@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   LayoutDashboard, Users, FileText, CheckSquare,
   Compass, Settings, ChevronRight, Terminal,
-  Rocket, FolderOpen, Layers,
+  Rocket, FolderOpen, Layers, Map,
 } from "lucide-react";
 
 interface NavItem {
@@ -33,6 +33,7 @@ const AGENTES: NavItem[] = [
 const QUALIDADE: NavItem[] = [
   { href: "/checklist", icon: CheckSquare, label: "Checklist" },
   { href: "/deploy",    icon: Rocket,      label: "Deploy"    },
+  { href: "/roadmap",   icon: Map,         label: "Roadmap"   },
 ];
 
 interface ActiveBrief { name: string; niche?: string }
