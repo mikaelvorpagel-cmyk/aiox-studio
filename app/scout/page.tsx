@@ -80,6 +80,7 @@ export default function ScoutPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
   const [searchError, setSearchError]     = useState("");
   const [savedNiche, setSavedNiche]       = useState("");
+  const [selectedRefs, setSelectedRefs]   = useState<string[]>([]);
 
   /* Metrics state */
   const [selectedCats, setSelectedCats]     = useState<string[]>(Object.keys(METRIC_CATEGORIES));
@@ -106,12 +107,28 @@ export default function ScoutPage() {
 
   useEffect(() => { loadKB(); }, [loadKB]);
 
+  const toggleRef = (url: string) => {
+    setSelectedRefs(prev =>
+      prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url]
+    );
+  };
+
+  const goToBriefWithRefs = () => {
+    try {
+      localStorage.setItem("scoutReferences", JSON.stringify(selectedRefs));
+      // Mantém compatibilidade com o formato antigo (aiox-scout-refs)
+      localStorage.setItem("aiox-scout-refs", JSON.stringify(selectedRefs.slice(0, 3)));
+    } catch { /* ignore */ }
+    window.location.href = "/brief";
+  };
+
   const runWebSearch = async () => {
     if (!searchKeyword.trim() || searching) return;
     setSearching(true);
     setSearchResults(null);
     setSearchError("");
     setSavedNiche("");
+    setSelectedRefs([]);
 
     const res = await fetch("/api/search", {
       method: "POST",
@@ -379,6 +396,29 @@ export default function ScoutPage() {
                 )}
               </div>
 
+              {/* Selected refs indicator */}
+              {selectedRefs.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 flex items-center justify-between gap-3 p-3 rounded-xl border"
+                  style={{ borderColor: "rgba(0,230,118,0.25)", background: "rgba(0,230,118,0.05)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "var(--accent)", animation: "pulse-dot 2s ease-in-out infinite" }} />
+                    <span className="text-xs font-medium" style={{ color: "var(--accent)" }}>
+                      {selectedRefs.length} referência{selectedRefs.length !== 1 ? "s" : ""} selecionada{selectedRefs.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <button
+                    onClick={goToBriefWithRefs}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0"
+                    style={{ background: "var(--accent)", color: "#020408", boxShadow: "0 0 12px rgba(0,230,118,0.3)" }}
+                  >
+                    Ir para o Brief com referências →
+                  </button>
+                </motion.div>
+              )}
+
               {/* Search results */}
               <AnimatePresence>
                 {grouped && (
@@ -393,24 +433,6 @@ export default function ScoutPage() {
                           ({searchResults?.length} referências)
                         </span>
                       </p>
-                      <button
-                        onClick={() => {
-                          const topRefs = (searchResults ?? [])
-                            .filter(r => r.category === "visual" || r.category === "reference")
-                            .slice(0, 3)
-                            .map(r => r.url);
-                          try { localStorage.setItem("aiox-scout-refs", JSON.stringify(topRefs)); } catch { /* ignore */ }
-                          window.location.href = "/brief";
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 transition-all"
-                        style={{
-                          background: "rgba(245,158,11,0.1)",
-                          border: "1px solid rgba(245,158,11,0.3)",
-                          color: "#F59E0B",
-                        }}
-                      >
-                        Usar no Brief →
-                      </button>
                     </div>
                     {Object.entries(CATEGORY_LABELS).map(([cat, label]) => {
                       const items = grouped[cat] ?? [];
@@ -421,30 +443,86 @@ export default function ScoutPage() {
                             <p className="text-xs font-semibold" style={{ color: "var(--text-subtle)" }}>{label}</p>
                           </div>
                           <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-                            {items.map(r => (
-                              <div key={r.url} className="px-4 py-3 hover:bg-white/[0.02] transition-colors">
-                                <div className="flex items-center gap-2 mb-0.5">
-                                  <a href={r.url} target="_blank" rel="noopener noreferrer"
-                                    className="text-sm font-medium truncate hover:underline"
-                                    style={{ color: "var(--text-secondary)" }}
-                                  >
-                                    {r.title}
-                                  </a>
-                                  <span
-                                    className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
-                                    style={{ color: RELEVANCE_COLOR[r.relevance], background: `${RELEVANCE_COLOR[r.relevance]}18` }}
-                                  >
-                                    {r.relevance}
-                                  </span>
+                            {items.map(r => {
+                              const isSelected = selectedRefs.includes(r.url);
+                              let domain = "";
+                              try { domain = new URL(r.url).hostname; } catch { /* ignore */ }
+                              return (
+                                <div
+                                  key={r.url}
+                                  className="px-4 py-3 transition-colors"
+                                  style={{ background: isSelected ? "rgba(0,230,118,0.04)" : undefined }}
+                                >
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    <button
+                                      onClick={() => toggleRef(r.url)}
+                                      className="shrink-0 w-4 h-4 rounded flex items-center justify-center transition-all"
+                                      title={isSelected ? "Remover seleção" : "Selecionar para o Brief"}
+                                      style={{
+                                        border: isSelected ? "1.5px solid var(--accent)" : "1.5px solid var(--border)",
+                                        background: isSelected ? "var(--accent)" : "transparent",
+                                        color: isSelected ? "#020408" : "transparent",
+                                      }}
+                                    >
+                                      {isSelected && <span style={{ fontSize: 8, fontWeight: 700 }}>✓</span>}
+                                    </button>
+                                    {/* Favicon */}
+                                    {domain ? (
+                                      <img
+                                        src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`}
+                                        alt=""
+                                        width={16}
+                                        height={16}
+                                        className="rounded shrink-0"
+                                        onError={e => {
+                                          const img = e.currentTarget as HTMLImageElement;
+                                          img.style.display = "none";
+                                          const next = img.nextElementSibling as HTMLElement | null;
+                                          if (next) next.style.display = "block";
+                                        }}
+                                      />
+                                    ) : null}
+                                    {domain ? (
+                                      <Globe size={14} className="shrink-0" style={{ color: "var(--text-subtle)", display: "none" }} />
+                                    ) : (
+                                      <Globe size={14} className="shrink-0" style={{ color: "var(--text-subtle)" }} />
+                                    )}
+                                    <a href={r.url} target="_blank" rel="noopener noreferrer"
+                                      className="flex-1 text-sm font-medium truncate hover:underline"
+                                      style={{ color: isSelected ? "var(--accent)" : "var(--text-secondary)" }}
+                                    >
+                                      {r.title}
+                                    </a>
+                                    <span
+                                      className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0"
+                                      style={{ color: RELEVANCE_COLOR[r.relevance], background: `${RELEVANCE_COLOR[r.relevance]}18` }}
+                                    >
+                                      {r.relevance}
+                                    </span>
+                                    <button
+                                      onClick={() => toggleRef(r.url)}
+                                      className="shrink-0 text-[10px] px-2 py-0.5 rounded transition-all"
+                                      style={isSelected ? {
+                                        background: "rgba(0,230,118,0.12)",
+                                        border: "1px solid rgba(0,230,118,0.3)",
+                                        color: "var(--accent)",
+                                      } : {
+                                        border: "1px solid var(--border)",
+                                        color: "var(--text-subtle)",
+                                      }}
+                                    >
+                                      {isSelected ? "Selecionado" : "Usar no Brief"}
+                                    </button>
+                                  </div>
+                                  <p className="text-[11px] truncate ml-6" style={{ color: "var(--text-subtle)" }}>{r.url}</p>
+                                  {r.description && (
+                                    <p className="text-xs mt-1 leading-relaxed line-clamp-2 ml-6" style={{ color: "var(--text-muted)" }}>
+                                      {r.description}
+                                    </p>
+                                  )}
                                 </div>
-                                <p className="text-[11px] truncate" style={{ color: "var(--text-subtle)" }}>{r.url}</p>
-                                {r.description && (
-                                  <p className="text-xs mt-1 leading-relaxed line-clamp-2" style={{ color: "var(--text-muted)" }}>
-                                    {r.description}
-                                  </p>
-                                )}
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );

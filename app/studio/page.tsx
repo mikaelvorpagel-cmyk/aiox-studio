@@ -6,7 +6,7 @@ import { Sidebar } from "@/components/Sidebar";
 import {
   Layers, Monitor, Tablet, Smartphone, Plus, ChevronUp, ChevronDown,
   Trash2, MessageSquare, Send, Loader2, Check, Palette,
-  Globe, Zap, LayoutTemplate, RefreshCw, ExternalLink, Pen,
+  Globe, Zap, LayoutTemplate, RefreshCw, ExternalLink, Pen, Info,
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────────────── */
@@ -92,6 +92,66 @@ const SECTION_HEIGHTS: Record<SectionType, number> = {
   testimonials: 130, faq: 100, cta: 90, metrics: 100, process: 140, custom: 100,
 };
 
+/* ─── StatusField with tooltip ──────────────────────────────────────── */
+function StatusField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <label className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--text-subtle)" }}>
+          Status
+        </label>
+        <div className="relative">
+          <button
+            type="button"
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+            className="flex items-center justify-center"
+            style={{ color: "var(--text-subtle)", lineHeight: 0 }}
+          >
+            <Info size={11} />
+          </button>
+          <AnimatePresence>
+            {showTooltip && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-52 p-2.5 rounded-lg pointer-events-none"
+                style={{
+                  background: "rgba(10,14,20,0.97)",
+                  border: "1px solid rgba(0,230,118,0.2)",
+                  boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+                  fontSize: 11,
+                  lineHeight: "1.5",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                O status é alterado pelo usuário manualmente ou pelo agente ao concluir uma tarefa via comando.
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full rounded-lg px-2 py-2 text-xs outline-none"
+        style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
+      >
+        <option value="draft">Rascunho</option>
+        <option value="in-progress">Em progresso</option>
+        <option value="done">Pronto</option>
+      </select>
+      <p className="text-[9px] mt-1 leading-snug" style={{ color: "var(--text-subtle)" }}>
+        Alterado por você ou pelo agente ao concluir
+      </p>
+    </div>
+  );
+}
+
 /* ─── Main Page ─────────────────────────────────────────────────────── */
 export default function StudioPage() {
   const STORAGE_KEY = "aiox-studio-sections-v2";
@@ -114,6 +174,8 @@ export default function StudioPage() {
   const [chatLoading, setChatLoading] = useState(false);
   const [pendingActions, setPendingActions] = useState<AIAction[]>([]);
   const [zoom, setZoom] = useState(100);
+  const [briefBanner, setBriefBanner] = useState<{ name: string; niche?: string; siteType?: string } | null>(null);
+  const [briefBannerDismissed, setBriefBannerDismissed] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
 
@@ -121,6 +183,18 @@ export default function StudioPage() {
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sections)); } catch { /* quota */ }
   }, [sections]);
+
+  // Load brief banner suggestion
+  useEffect(() => {
+    if (briefBannerDismissed) return;
+    try {
+      const stored = localStorage.getItem("activeBrief");
+      if (stored) {
+        const parsed = JSON.parse(stored) as { name: string; niche?: string; siteType?: string };
+        setBriefBanner(parsed);
+      }
+    } catch { /* ignore */ }
+  }, [briefBannerDismissed]);
 
   // Load preview URL
   useEffect(() => {
@@ -300,6 +374,23 @@ Responda em português. Seja direto e prático.`;
   /* ─── Computed ────────────────────────────────────────────────────── */
   const selectedSection = sections.find(s => s.id === selected) ?? null;
   const previewWidth = DEVICE_W[device];
+
+  const SITE_SECTION_SUGGESTIONS: Record<string, string[]> = {
+    portfolio:     ["Hero", "Sobre", "Projetos", "Processo", "Contato"],
+    "landing-page": ["Hero", "Benefícios", "Como Funciona", "Depoimentos", "CTA", "FAQ"],
+    "e-commerce":  ["Hero", "Produtos em Destaque", "Sobre", "Contato"],
+  };
+
+  const detectSiteType = (niche?: string): string | null => {
+    if (!niche) return null;
+    const n = niche.toLowerCase();
+    if (n.includes("portfolio") || n.includes("portfólio") || n.includes("designer") || n.includes("fotógrafo")) return "portfolio";
+    if (n.includes("loja") || n.includes("e-commerce") || n.includes("produto")) return "e-commerce";
+    return "landing-page";
+  };
+
+  const suggestedType = briefBanner ? detectSiteType(briefBanner.niche) : null;
+  const suggestedSections = suggestedType ? SITE_SECTION_SUGGESTIONS[suggestedType] : null;
 
   /* ─── Render ──────────────────────────────────────────────────────── */
   return (
@@ -582,6 +673,37 @@ Responda em português. Seja direto e prático.`;
             </div>
           </div>
 
+          {/* Brief context banner */}
+          {briefBanner && !briefBannerDismissed && suggestedSections && (
+            <div
+              className="flex items-center gap-3 px-4 py-2.5 border-b shrink-0"
+              style={{ borderColor: "rgba(0,230,118,0.15)", background: "rgba(0,230,118,0.04)" }}
+            >
+              <span className="text-[11px] font-medium" style={{ color: "var(--accent)" }}>
+                Sugestão para "{briefBanner.name}":
+              </span>
+              <div className="flex items-center gap-1 flex-1 overflow-hidden">
+                {suggestedSections.map((s, i) => (
+                  <span key={s} className="flex items-center gap-1">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(0,230,118,0.1)", color: "rgba(0,230,118,0.8)", border: "1px solid rgba(0,230,118,0.2)", whiteSpace: "nowrap" }}>
+                      {s}
+                    </span>
+                    {i < suggestedSections.length - 1 && (
+                      <span className="text-[10px]" style={{ color: "var(--text-subtle)" }}>→</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+              <button
+                onClick={() => setBriefBannerDismissed(true)}
+                className="shrink-0 text-[10px] px-2 py-1 rounded transition-all"
+                style={{ color: "var(--text-subtle)", border: "1px solid var(--border)" }}
+              >
+                Dispensar
+              </button>
+            </div>
+          )}
+
           {/* Canvas */}
           <div className="flex-1 overflow-auto flex items-start justify-center p-8" style={{ background: "#0a0d12" }}>
             <div
@@ -736,21 +858,10 @@ Responda em português. Seja direto e prático.`;
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-medium uppercase tracking-wider block mb-1.5" style={{ color: "var(--text-subtle)" }}>
-                      Status
-                    </label>
-                    <select
-                      value={selectedSection.status}
-                      onChange={e => updateSection(selectedSection.id, { status: e.target.value as SectionStatus })}
-                      className="w-full rounded-lg px-2 py-2 text-xs outline-none"
-                      style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text-primary)" }}
-                    >
-                      <option value="draft">Rascunho</option>
-                      <option value="in-progress">Em progresso</option>
-                      <option value="done">Pronto</option>
-                    </select>
-                  </div>
+                  <StatusField
+                    value={selectedSection.status}
+                    onChange={v => updateSection(selectedSection.id, { status: v as SectionStatus })}
+                  />
                 </div>
 
                 {/* Agent */}

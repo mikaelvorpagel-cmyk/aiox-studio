@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Sidebar } from "@/components/Sidebar";
-import { CheckCircle2, XCircle, ExternalLink, RefreshCw, Settings } from "lucide-react";
+import { CheckCircle2, XCircle, ExternalLink, RefreshCw, Settings, Copy, Check, Eye, EyeOff } from "lucide-react";
 import type { ConfigItem } from "@/app/api/status/route";
 
 interface StatusData {
@@ -125,11 +125,32 @@ export default function SettingsPage() {
 
 function ConfigCard({ cfg }: { cfg: ConfigItem }) {
   const ok = cfg.status === "ok";
+  const [inputVal, setInputVal] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [showVal, setShowVal] = useState(false);
+
+  const handleSave = () => {
+    if (!inputVal.trim()) return;
+    try {
+      localStorage.setItem(`aiox-settings-${cfg.key}`, inputVal.trim());
+    } catch { /* ignore */ }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleCopy = () => {
+    const cmd = `echo "${cfg.key}=${inputVal || "sua-chave"}" >> .env.local`;
+    navigator.clipboard.writeText(cmd).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className={`p-4 rounded-xl border transition-colors ${
       ok ? "border-white/6 bg-white/[0.02]" : "border-amber-500/20 bg-amber-500/5"
     }`}>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 mb-1">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             {ok
@@ -143,11 +164,6 @@ function ConfigCard({ cfg }: { cfg: ConfigItem }) {
           {ok && cfg.value && (
             <p className="text-[11px] font-mono text-white/25 mt-1 truncate">{cfg.value}</p>
           )}
-          {!ok && (
-            <p className="text-[11px] text-amber-400/70 mt-1">
-              Adicione <code className="font-mono">{cfg.key}=sua-chave</code> no .env.local
-            </p>
-          )}
         </div>
         {cfg.url && (
           <a
@@ -160,6 +176,53 @@ function ConfigCard({ cfg }: { cfg: ConfigItem }) {
           </a>
         )}
       </div>
+
+      {/* API key input for unconfigured items */}
+      {!ok && (
+        <div className="mt-3 space-y-2">
+          <div className="flex gap-2">
+            <div className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(251,191,36,0.2)" }}>
+              <input
+                type={showVal ? "text" : "password"}
+                value={inputVal}
+                onChange={e => setInputVal(e.target.value)}
+                placeholder={`${cfg.key}=...`}
+                className="flex-1 bg-transparent outline-none text-xs font-mono"
+                style={{ color: "rgba(255,255,255,0.7)" }}
+                onKeyDown={e => e.key === "Enter" && handleSave()}
+              />
+              <button
+                onClick={() => setShowVal(v => !v)}
+                className="shrink-0 opacity-30 hover:opacity-60 transition-opacity"
+                style={{ color: "white" }}
+              >
+                {showVal ? <EyeOff size={11} /> : <Eye size={11} />}
+              </button>
+            </div>
+            <button
+              onClick={handleSave}
+              className="px-3 py-2 rounded-lg text-xs font-semibold transition-all shrink-0"
+              style={saved
+                ? { background: "rgba(0,230,118,0.15)", color: "#00E676", border: "1px solid rgba(0,230,118,0.3)" }
+                : { background: "rgba(251,191,36,0.1)", color: "#FBBF24", border: "1px solid rgba(251,191,36,0.25)" }
+              }
+            >
+              {saved ? <Check size={12} /> : "Salvar"}
+            </button>
+          </div>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 text-[10px] transition-colors"
+            style={{ color: copied ? "#00E676" : "rgba(255,255,255,0.25)" }}
+          >
+            {copied ? <Check size={10} /> : <Copy size={10} />}
+            {copied ? "Comando copiado!" : "Copiar comando para .env.local"}
+          </button>
+          <p className="text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>
+            Salvar aqui guarda na sessão do browser. Para persistir, adicione ao <code className="font-mono">.env.local</code> e reinicie o servidor.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

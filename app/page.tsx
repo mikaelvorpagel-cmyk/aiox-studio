@@ -11,6 +11,51 @@ import { Sidebar } from "@/components/Sidebar";
 import type { Agent } from "@/lib/squad";
 import type { ConfigItem } from "@/app/api/status/route";
 
+function useProjectProgress(briefCount: number, kbCount: number): number {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    let score = 0;
+    const total = 100;
+
+    // Brief preenchido: 30 pts
+    if (briefCount > 0) score += 30;
+
+    // Scout com referências: 15 pts
+    if (kbCount > 0) score += 15;
+
+    // localStorage: brief ativo: +10
+    try {
+      if (localStorage.getItem("activeBrief")) score += 10;
+    } catch { /* ignore */ }
+
+    // checklist: 25 pts máx
+    try {
+      const cl = localStorage.getItem("aiox-checklist-v1");
+      if (cl) {
+        const checked = JSON.parse(cl) as Record<string, boolean>;
+        const done = Object.values(checked).filter(Boolean).length;
+        const maxItems = 55; // aprox total de itens do checklist
+        score += Math.min(25, Math.round((done / maxItems) * 25));
+      }
+    } catch { /* ignore */ }
+
+    // studio sections: 20 pts máx
+    try {
+      const st = localStorage.getItem("aiox-studio-sections-v2");
+      if (st) {
+        const sections = JSON.parse(st) as { status: string }[];
+        const done = sections.filter(s => s.status === "done").length;
+        score += Math.min(20, Math.round((done / Math.max(sections.length, 1)) * 20));
+      }
+    } catch { /* ignore */ }
+
+    setProgress(Math.min(100, Math.round((score / total) * 100)));
+  }, [briefCount, kbCount]);
+
+  return progress;
+}
+
 interface StatusData {
   provider: string;
   configs: ConfigItem[];
@@ -86,6 +131,10 @@ export default function Dashboard() {
 
   const pendingConfigs = status?.configs.filter(c => c.status !== "ok") ?? [];
   const hasBriefs = (status?.stats.briefCount ?? 0) > 0;
+  const progress = useProjectProgress(
+    status?.stats.briefCount ?? 0,
+    status?.stats.kbCount ?? 0,
+  );
 
   return (
     <div className="flex min-h-screen">
@@ -121,6 +170,43 @@ export default function Dashboard() {
                 : "Carregando..."}
             </p>
           </motion.div>
+
+          {/* Barra de progresso geral */}
+          {status && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.03, duration: 0.35 }}
+              className="mb-6 p-4 rounded-xl border"
+              style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                  Progresso do projeto
+                </span>
+                <span
+                  className="text-sm font-bold font-mono"
+                  style={{ color: progress > 0 ? "var(--accent)" : "var(--text-subtle)" }}
+                >
+                  {progress}%
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: "var(--accent)", boxShadow: "0 0 8px rgba(0,230,118,0.4)" }}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                  transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
+                />
+              </div>
+              {progress === 0 && (
+                <p className="text-[10px] mt-1.5" style={{ color: "var(--text-subtle)" }}>
+                  Comece criando um brief para iniciar o rastreamento de progresso
+                </p>
+              )}
+            </motion.div>
+          )}
 
           {/* Config alert */}
           {pendingConfigs.length > 0 && (
@@ -249,6 +335,29 @@ export default function Dashboard() {
                               <p className="text-[10px] mt-0.5 leading-snug" style={{ color: "var(--text-subtle)" }}>
                                 {desc}
                               </p>
+                            )}
+                            {/* Preview mockup por tipo */}
+                            {(cfg.label === "Anthropic API" || cfg.label === "LLM Provider" || cfg.label === "Google Vertex AI") && (
+                              <div className="mt-2 opacity-30 pointer-events-none select-none">
+                                <p className="text-[9px] text-amber-400/70 mb-1">Preview — conecte para ativar</p>
+                                <div
+                                  className="rounded-lg p-2 text-[10px] leading-relaxed"
+                                  style={{ background: "rgba(0,230,118,0.06)", border: "1px solid rgba(0,230,118,0.1)", color: "rgba(0,230,118,0.6)" }}
+                                >
+                                  Analisando brief do projeto...
+                                </div>
+                              </div>
+                            )}
+                            {cfg.label === "Exa Search" && (
+                              <div className="mt-2 opacity-25 pointer-events-none select-none">
+                                <p className="text-[9px] text-amber-400/70 mb-1">Preview — conecte para ativar</p>
+                                <div className="space-y-1">
+                                  <p className="text-[10px]" style={{ color: "var(--text-subtle)" }}>3 referências encontradas</p>
+                                  {[1, 2, 3].map(n => (
+                                    <div key={n} className="h-2 rounded" style={{ background: "var(--surface-2)", width: `${90 - n * 10}%` }} />
+                                  ))}
+                                </div>
+                              </div>
                             )}
                           </>
                         )}

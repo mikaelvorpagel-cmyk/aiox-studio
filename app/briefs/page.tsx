@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { FolderOpen, FileText, ArrowRight, Plus, Clock } from "lucide-react";
+import { FolderOpen, FileText, ArrowRight, Plus, Clock, CheckCircle2 } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 
 interface Brief { name: string; content: string }
@@ -16,13 +16,35 @@ function extractField(content: string, label: string): string {
 export default function BriefsPage() {
   const [briefs, setBriefs] = useState<Brief[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeBriefId, setActiveBriefId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/brief")
       .then(r => r.json())
       .then(data => { setBriefs(data.briefs ?? []); setLoading(false); })
       .catch(() => setLoading(false));
+
+    try {
+      const stored = localStorage.getItem("activeBrief");
+      if (stored) {
+        const parsed = JSON.parse(stored) as { id?: string };
+        setActiveBriefId(parsed.id ?? null);
+      }
+    } catch { /* ignore */ }
   }, []);
+
+  const openBrief = (brief: Brief) => {
+    const client = extractField(brief.content, "Nome");
+    const niche  = extractField(brief.content, "Nicho");
+    try {
+      localStorage.setItem("activeBrief", JSON.stringify({
+        name: client || brief.name,
+        niche,
+        id: brief.name,
+      }));
+      setActiveBriefId(brief.name);
+    } catch { /* ignore */ }
+  };
 
   return (
     <div className="flex min-h-screen">
@@ -104,32 +126,48 @@ export default function BriefsPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.05, duration: 0.3 }}
                   >
-                    <Link
-                      href="/brief"
+                    <div
                       className="group flex items-start gap-4 p-5 rounded-xl border transition-all duration-200"
-                      style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+                      style={{
+                        borderColor: activeBriefId === brief.name ? "rgba(0,230,118,0.3)" : "var(--border)",
+                        background: activeBriefId === brief.name ? "rgba(0,230,118,0.04)" : "var(--surface-1)",
+                      }}
                       onMouseEnter={e => {
-                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
-                        (e.currentTarget as HTMLElement).style.background = "var(--surface-2)";
+                        if (activeBriefId !== brief.name) {
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
+                          (e.currentTarget as HTMLElement).style.background = "var(--surface-2)";
+                        }
                       }}
                       onMouseLeave={e => {
-                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
-                        (e.currentTarget as HTMLElement).style.background = "var(--surface-1)";
+                        if (activeBriefId !== brief.name) {
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                          (e.currentTarget as HTMLElement).style.background = "var(--surface-1)";
+                        }
                       }}
                     >
                       {/* Icon */}
                       <div
                         className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                        style={{ background: "rgba(0,230,118,0.08)", border: "1px solid rgba(0,230,118,0.18)" }}
+                        style={{
+                          background: activeBriefId === brief.name ? "rgba(0,230,118,0.12)" : "rgba(0,230,118,0.08)",
+                          border: `1px solid ${activeBriefId === brief.name ? "rgba(0,230,118,0.3)" : "rgba(0,230,118,0.18)"}`,
+                        }}
                       >
                         <FileText size={16} style={{ color: "var(--accent)" }} />
                       </div>
 
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-                          {client || brief.name}
-                        </p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                            {client || brief.name}
+                          </p>
+                          {activeBriefId === brief.name && (
+                            <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: "rgba(0,230,118,0.12)", color: "var(--accent)", border: "1px solid rgba(0,230,118,0.25)" }}>
+                              <CheckCircle2 size={9} /> Ativo
+                            </span>
+                          )}
+                        </div>
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                           {niche && (
                             <span className="text-[11px]" style={{ color: "var(--accent)", opacity: 0.8 }}>
@@ -155,12 +193,23 @@ export default function BriefsPage() {
                         </div>
                       </div>
 
-                      <ArrowRight
-                        size={14}
-                        className="shrink-0 mt-1 opacity-0 group-hover:opacity-40 -translate-x-1 group-hover:translate-x-0 transition-all duration-200"
-                        style={{ color: "var(--text-muted)" }}
-                      />
-                    </Link>
+                      {/* Actions */}
+                      <div className="flex flex-col gap-2 shrink-0 items-end">
+                        <Link
+                          href={`/brief`}
+                          onClick={() => openBrief(brief)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                          style={{
+                            background: activeBriefId === brief.name ? "var(--accent)" : "var(--surface-2)",
+                            color: activeBriefId === brief.name ? "#020408" : "var(--text-secondary)",
+                            border: `1px solid ${activeBriefId === brief.name ? "var(--accent)" : "var(--border)"}`,
+                          }}
+                        >
+                          {activeBriefId === brief.name ? "Aberto" : "Abrir"}
+                          <ArrowRight size={11} />
+                        </Link>
+                      </div>
+                    </div>
                   </motion.div>
                 );
               })}

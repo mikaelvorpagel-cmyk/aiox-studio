@@ -1,9 +1,29 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CheckCircle2, Play, RotateCcw } from "lucide-react";
 import type { Agent } from "@/lib/squad";
+
+export type AgentStatus = "not-started" | "in-progress" | "done";
+
+const STORAGE_KEY = "aiox-agent-status";
+
+export function getAgentStatuses(): Record<string, AgentStatus> {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    return s ? JSON.parse(s) : {};
+  } catch { return {}; }
+}
+
+export function setAgentStatus(agentId: string, status: AgentStatus) {
+  try {
+    const all = getAgentStatuses();
+    all[agentId] = status;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+}
 
 interface AgentCardProps {
   agent: Agent;
@@ -11,17 +31,45 @@ interface AgentCardProps {
   phase?: number;
   phaseLabel?: string;
   isLead?: boolean;
+  onActivate?: (agent: Agent) => void;
 }
 
-export function AgentCard({ agent, index, phase, phaseLabel, isLead }: AgentCardProps) {
+export function AgentCard({ agent, index, phase, phaseLabel, isLead, onActivate }: AgentCardProps) {
+  const [status, setStatus] = useState<AgentStatus>(() => {
+    if (typeof window === "undefined") return "not-started";
+    return getAgentStatuses()[agent.id] ?? "not-started";
+  });
+
+  const changeStatus = useCallback((s: AgentStatus, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setStatus(s);
+    setAgentStatus(agent.id, s);
+  }, [agent.id]);
+
+  const STATUS_CFG: Record<AgentStatus, { label: string; color: string; pulse: boolean }> = {
+    "not-started": { label: "",             color: "rgba(255,255,255,0.15)", pulse: false },
+    "in-progress": { label: "Em andamento", color: "#FBBF24",                pulse: true  },
+    "done":        { label: "Concluído",    color: "#00E676",                pulse: false },
+  };
+  const cfg = STATUS_CFG[status];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.04, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+      className="relative"
     >
       <Link
         href={`/agents/${agent.id}`}
+        onClick={() => {
+          onActivate?.(agent);
+          if (status === "not-started") {
+            setStatus("in-progress");
+            setAgentStatus(agent.id, "in-progress");
+          }
+        }}
         className="group flex flex-col p-5 rounded-xl border transition-all duration-200 h-full relative"
         style={{
           borderColor: isLead ? `${agent.color}50` : "var(--border)",
@@ -37,6 +85,23 @@ export function AgentCard({ agent, index, phase, phaseLabel, isLead }: AgentCard
           (e.currentTarget as HTMLElement).style.background = isLead ? `${agent.color}06` : "var(--surface-1)";
         }}
       >
+        {/* Status indicator top-right */}
+        <div className="absolute top-3 right-3 flex items-center gap-1.5">
+          {cfg.label && (
+            <span className="text-[9px] font-medium" style={{ color: cfg.color }}>
+              {cfg.label}
+            </span>
+          )}
+          <span
+            className="w-2 h-2 rounded-full shrink-0"
+            style={{
+              background: cfg.color,
+              boxShadow: status === "done" ? `0 0 6px ${cfg.color}` : "none",
+              animation: cfg.pulse ? "pulse-dot 2s ease-in-out infinite" : "none",
+            }}
+          />
+        </div>
+
         {/* Phase badge */}
         {phase !== undefined && (
           <div className="flex items-center gap-2 mb-3">
@@ -123,10 +188,52 @@ export function AgentCard({ agent, index, phase, phaseLabel, isLead }: AgentCard
           </div>
         )}
 
-        {/* Command count */}
-        <p className="text-[10px]" style={{ color: "var(--text-subtle)" }}>
-          {agent.commands.length} comando{agent.commands.length !== 1 ? "s" : ""} disponíve{agent.commands.length !== 1 ? "is" : "l"}
-        </p>
+        {/* Bottom row: command count + status actions */}
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[10px]" style={{ color: "var(--text-subtle)" }}>
+            {agent.commands.length} comando{agent.commands.length !== 1 ? "s" : ""} disponíve{agent.commands.length !== 1 ? "is" : "l"}
+          </p>
+
+          {/* Status action buttons — visible on hover */}
+          <AnimatePresence>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              {status !== "in-progress" && (
+                <button
+                  onClick={e => changeStatus("in-progress", e)}
+                  title="Iniciar"
+                  className="p-1 rounded transition-colors"
+                  style={{ color: "#FBBF24" }}
+                >
+                  <Play size={10} />
+                </button>
+              )}
+              {status !== "done" && (
+                <button
+                  onClick={e => changeStatus("done", e)}
+                  title="Concluir"
+                  className="p-1 rounded transition-colors"
+                  style={{ color: "#00E676" }}
+                >
+                  <CheckCircle2 size={10} />
+                </button>
+              )}
+              {status !== "not-started" && (
+                <button
+                  onClick={e => changeStatus("not-started", e)}
+                  title="Resetar"
+                  className="p-1 rounded transition-colors"
+                  style={{ color: "rgba(255,255,255,0.3)" }}
+                >
+                  <RotateCcw size={10} />
+                </button>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </Link>
     </motion.div>
   );

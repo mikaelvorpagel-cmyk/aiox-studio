@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "@/components/Sidebar";
 import { CheckSquare, Square, AlertTriangle, Star, RotateCcw, Terminal } from "lucide-react";
+import { addActivity } from "@/lib/activityFeed";
 
 const CRITICAL = [
   "Paleta de cor consistente em todas as seções",
@@ -100,7 +101,6 @@ function CheckGroup({
 }) {
   const count = items.filter(i => !!checked[i] !== flagMode).length;
   const total = items.length;
-  const [hinted, setHinted] = useState<string | null>(null);
 
   return (
     <div className="rounded-xl border border-white/6 overflow-hidden">
@@ -118,13 +118,12 @@ function CheckGroup({
           const isChecked = !!checked[item];
           const ok = flagMode ? !isChecked : isChecked;
           const hint = AGENT_HINTS[item];
+          const showHint = hint && !isChecked;
           return (
-            <div key={item} className="group">
+            <div key={item}>
               <button
                 onClick={() => onToggle(item)}
                 className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-white/2 transition-colors"
-                onMouseEnter={() => hint && setHinted(item)}
-                onMouseLeave={() => setHinted(null)}
               >
                 <span className={`mt-0.5 shrink-0 transition-colors ${ok ? "" : "text-white/20"}`} style={ok ? { color } : {}}>
                   {ok ? <CheckSquare size={14} /> : <Square size={14} />}
@@ -132,40 +131,23 @@ function CheckGroup({
                 <span className={`text-xs leading-relaxed transition-colors flex-1 ${ok ? "text-white/65" : "text-white/30"}`}>
                   {item}
                 </span>
-                {hint && !isChecked && (
-                  <span className="text-[9px] opacity-0 group-hover:opacity-60 transition-opacity shrink-0 mt-0.5" style={{ color: "var(--accent)" }}>
-                    sugestão
-                  </span>
-                )}
               </button>
-              {/* Agent hint */}
-              <AnimatePresence>
-                {hinted === item && hint && !isChecked && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
+              {/* Agent hint — exibido permanentemente quando item não está marcado */}
+              {showHint && (
+                <div className="flex items-center gap-1.5 pb-2 ml-6 px-4">
+                  <Terminal size={9} style={{ color: "rgba(0,230,118,0.5)", flexShrink: 0 }} />
+                  <code
+                    className="font-mono"
+                    style={{
+                      fontSize: 10,
+                      color: "rgba(0,230,118,0.5)",
+                      lineHeight: 1.4,
+                    }}
                   >
-                    <div
-                      className="mx-4 mb-2 px-3 py-2 rounded-lg flex items-center gap-2 text-[11px]"
-                      style={{
-                        background: "rgba(0,230,118,0.04)",
-                        border: "1px solid rgba(0,230,118,0.15)",
-                      }}
-                    >
-                      <Terminal size={10} style={{ color: "var(--accent)", flexShrink: 0 }} />
-                      <span style={{ color: "var(--text-subtle)" }}>Agente sugerido:</span>
-                      <code
-                        className="font-mono font-medium ml-1"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        {hint}
-                      </code>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    → {hint}
+                  </code>
+                </div>
+              )}
             </div>
           );
         })}
@@ -189,6 +171,10 @@ export default function ChecklistPage() {
     setChecked(prev => {
       const next = { ...prev, [k]: !prev[k] };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* quota */ }
+      // Registra no feed de atividade ao marcar (não ao desmarcar)
+      if (!prev[k]) {
+        addActivity({ type: "checklist_item", message: `Item marcado: ${k}` });
+      }
       return next;
     });
 

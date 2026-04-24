@@ -1,26 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Users, CheckCircle2, FileText } from "lucide-react";
+import { Users, CheckCircle2, FileText, Folder, File, FolderOpen } from "lucide-react";
 import Link from "next/link";
 import { Sidebar } from "@/components/Sidebar";
 import { AgentCard } from "@/components/AgentCard";
 import type { Agent } from "@/lib/squad";
+import { addActivity } from "@/lib/activityFeed";
 
-/* Ordered workflow sequence */
+/* Ordered workflow sequence — Vex → Reva → Saga → Copy → Dev → Motion → Assets → SEO → Review → Deploy */
 const AGENT_ORDER = [
-  "web-designer",
-  "ux-researcher",
-  "storytelling-specialist",
-  "copy-specialist",
-  "ui-developer",
-  "motion-engineer",
-  "assets-manager",
-  "seo-specialist",
-  "design-reviewer",
-  "reference-scout",
-  "deploy-agent",
+  "web-designer",           // Vex — Lead
+  "ux-researcher",          // Reva
+  "storytelling-specialist",// Saga
+  "copy-specialist",        // Copy
+  "ui-developer",           // Dev
+  "motion-engineer",        // Motion
+  "assets-manager",         // Assets
+  "seo-specialist",         // SEO
+  "design-reviewer",        // Review
+  "reference-scout",        // Scout
+  "deploy-agent",           // Deploy
 ];
 
 const AGENT_META: Record<string, { phase: number; label: string; isLead?: boolean }> = {
@@ -48,20 +49,60 @@ function sortAgents(agents: Agent[]): Agent[] {
   });
 }
 
+interface LogEntry {
+  ts: string;
+  message: string;
+}
+
+const MAX_LOG_LINES = 50;
+
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [activeBrief, setActiveBrief] = useState<{ name: string; niche?: string } | null>(null);
+  const [log, setLog] = useState<LogEntry[]>([
+    { ts: new Date().toLocaleTimeString("pt-BR"), message: "Sistema inicializado. Aguardando ativação do agente..." },
+  ]);
+  const [generatedFiles] = useState<string[]>([]);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  const addLog = useCallback((message: string) => {
+    const ts = new Date().toLocaleTimeString("pt-BR");
+    setLog(prev => {
+      const next = [...prev, { ts, message }];
+      return next.length > MAX_LOG_LINES ? next.slice(next.length - MAX_LOG_LINES) : next;
+    });
+  }, []);
 
   useEffect(() => {
-    fetch("/api/agents").then(r => r.json()).then(d => setAgents(d.agents ?? []));
+    fetch("/api/agents").then(r => r.json()).then(d => {
+      const list: Agent[] = d.agents ?? [];
+      setAgents(list);
+      if (list.length > 0) {
+        addLog(`${list.length} agente${list.length !== 1 ? "s" : ""} carregado${list.length !== 1 ? "s" : ""} com sucesso.`);
+      }
+    });
     fetch("/api/brief").then(r => r.json()).then(data => {
       const briefs: { name: string; content: string }[] = data.briefs ?? [];
       if (briefs.length === 0) return;
       const latest = briefs[briefs.length - 1];
       const nicheMatch = latest.content.match(/\*\*Nicho:\*\*\s*(.+)/);
-      setActiveBrief({ name: latest.name, niche: nicheMatch?.[1]?.trim() });
+      const brief = { name: latest.name, niche: nicheMatch?.[1]?.trim() };
+      setActiveBrief(brief);
+      addLog(`Brief ativo carregado: "${brief.name}"${brief.niche ? ` [${brief.niche}]` : ""}`);
     }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Auto-scroll log
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [log]);
+
+  const handleAgentActivate = useCallback((agent: Agent) => {
+    addLog(`Agente ativado: [${agent.name}] — ${agent.title}`);
+    addLog(`→ Abrindo console de chat com ${agent.name}...`);
+    addActivity({ type: "agent_activated", message: `Agente ativado: ${agent.name}` });
+  }, [addLog]);
 
   const sorted = sortAgents(agents);
 
@@ -132,13 +173,13 @@ export default function AgentsPage() {
               <div
                 className="flex items-center gap-3 p-3 rounded-xl border"
                 style={{
-                  borderColor: "rgba(255,255,255,0.06)",
-                  background: "rgba(255,255,255,0.02)",
+                  borderColor: "rgba(251,191,36,0.2)",
+                  background: "rgba(251,191,36,0.04)",
                 }}
               >
-                <FileText size={14} style={{ color: "var(--text-subtle)" }} className="shrink-0" />
+                <FileText size={14} style={{ color: "#FBBF24" }} className="shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+                  <p className="text-xs font-medium" style={{ color: "#FBBF24" }}>
                     Nenhum brief ativo
                   </p>
                   <p className="text-[11px] mt-0.5" style={{ color: "var(--text-subtle)" }}>
@@ -148,9 +189,9 @@ export default function AgentsPage() {
                 <Link
                   href="/brief"
                   className="text-[10px] px-2.5 py-1.5 rounded-lg shrink-0 transition-all"
-                  style={{ color: "var(--text-muted)", border: "1px solid var(--border)" }}
+                  style={{ color: "#FBBF24", border: "1px solid rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.06)" }}
                 >
-                  Criar brief
+                  Criar brief →
                 </Link>
               </div>
             )}
@@ -179,11 +220,87 @@ export default function AgentsPage() {
                     phase={meta?.phase}
                     phaseLabel={meta?.label}
                     isLead={meta?.isLead}
+                    onActivate={handleAgentActivate}
                   />
                 );
               })}
             </div>
           )}
+
+          {/* Activity Log */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.4 }}
+            className="mt-8"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--accent)", animation: "pulse-dot 2s ease-in-out infinite" }} />
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-subtle)" }}>
+                Activity Log
+              </p>
+              <span className="ml-auto text-[10px] font-mono" style={{ color: "var(--text-subtle)" }}>
+                {log.length}/{MAX_LOG_LINES} linhas
+              </span>
+            </div>
+            <div
+              className="rounded-xl overflow-hidden border"
+              style={{ borderColor: "rgba(0,230,118,0.12)" }}
+            >
+              <div
+                className="h-48 overflow-y-auto p-4 font-mono text-xs space-y-1"
+                style={{ background: "#0a0a0a" }}
+              >
+                {log.map((entry, i) => (
+                  <div key={i} className="flex gap-2 leading-relaxed">
+                    <span className="shrink-0 opacity-40" style={{ color: "#00E676" }}>{entry.ts}</span>
+                    <span style={{ color: "#00E676" }}>{entry.message}</span>
+                  </div>
+                ))}
+                <div ref={logEndRef} />
+              </div>
+            </div>
+          </motion.div>
+
+          {/* File Tree */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4, duration: 0.4 }}
+            className="mt-4 mb-8"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <FolderOpen size={12} style={{ color: "var(--text-subtle)" }} />
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-subtle)" }}>
+                Arquivos Gerados
+              </p>
+            </div>
+            <div
+              className="rounded-xl border p-4"
+              style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+            >
+              {generatedFiles.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 gap-2 opacity-50">
+                  <Folder size={24} style={{ color: "var(--text-subtle)" }} />
+                  <p className="text-xs" style={{ color: "var(--text-subtle)" }}>
+                    Nenhum arquivo gerado ainda
+                  </p>
+                  <p className="text-[10px]" style={{ color: "var(--text-subtle)" }}>
+                    Os arquivos aparecem aqui quando os agentes produzirem output
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-1 font-mono text-xs">
+                  {generatedFiles.map((f, i) => (
+                    <div key={i} className="flex items-center gap-2 py-1" style={{ color: "var(--text-muted)" }}>
+                      <File size={11} style={{ color: "var(--accent)", opacity: 0.7 }} />
+                      <span>{f}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
 
         </div>
       </main>

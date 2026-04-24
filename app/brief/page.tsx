@@ -3,7 +3,9 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "@/components/Sidebar";
-import { Save, ChevronRight, ChevronLeft, Check, FileText, FolderOpen, Trash2, Clock, Info } from "lucide-react";
+import { Save, ChevronRight, ChevronLeft, Check, FileText, FolderOpen, Trash2, Clock, Info, Compass, Download, X } from "lucide-react";
+import { addActivity } from "@/lib/activityFeed";
+import { useToast } from "@/components/Toast";
 
 const AESTHETICS = [
   "Dark & Premium", "Light & Clean", "Editorial/Magazine",
@@ -38,7 +40,75 @@ const EMPTY_FORM = {
 
 interface SavedBrief { name: string; content: string }
 
+interface BriefVersion {
+  timestamp: string;
+  snapshot: typeof EMPTY_FORM;
+}
+
+const MAX_VERSIONS = 5;
+
+/* ── Progress calculation per tab ───────────────────────── */
+function calcTabProgress(form: typeof EMPTY_FORM, tabIndex: number): { filled: number; total: number } {
+  const checks: Record<number, (() => boolean)[]> = {
+    0: [
+      () => !!form.clientName,
+      () => !!form.niche,
+      () => !!form.target,
+      () => !!form.differentiator,
+      () => !!form.tone,
+      () => !!form.objective,
+      () => !!form.cta,
+    ],
+    1: [
+      () => form.aesthetic.length > 0,
+      () => !!form.ref1,
+      () => !!form.bg,
+      () => !!form.headingFont,
+    ],
+    2: [
+      () => !!form.motionSpeed,
+      () => form.effects.length > 0,
+    ],
+    3: [
+      () => !!form.protagonist,
+      () => !!form.problem,
+      () => !!form.headline,
+      () => !!form.tagline,
+    ],
+    4: [],
+  };
+  const fns = checks[tabIndex] ?? [];
+  const filled = fns.filter(fn => fn()).length;
+  return { filled, total: fns.length };
+}
+
+function TabDot({ tabIndex, form }: { tabIndex: number; form: typeof EMPTY_FORM }) {
+  if (tabIndex === 4) return null;
+  const { filled, total } = calcTabProgress(form, tabIndex);
+  if (total === 0 || filled === 0) return null;
+  const color = filled === total ? "#00E676" : "#FBBF24";
+  return (
+    <span
+      className="w-1.5 h-1.5 rounded-full shrink-0"
+      style={{
+        background: color,
+        boxShadow: filled === total ? "0 0 4px #00E676" : "none",
+      }}
+    />
+  );
+}
+
+function formatTs(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("pt-BR", {
+      day: "2-digit", month: "2-digit", year: "2-digit",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch { return iso; }
+}
+
 export default function BriefPage() {
+  const toast = useToast();
   const [step, setStep]     = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
@@ -48,6 +118,13 @@ export default function BriefPage() {
   const [savedBriefs, setSavedBriefs]     = useState<SavedBrief[]>([]);
   const [panelOpen, setPanelOpen]         = useState(false);
   const [loadingBriefs, setLoadingBriefs] = useState(false);
+  const [scoutRefs, setScoutRefs]         = useState<string[]>([]);
+  const [scoutRefsImported, setScoutRefsImported] = useState(false);
+
+  // History drawer
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [versions, setVersions]       = useState<BriefVersion[]>([]);
+  const [restoredToast, setRestoredToast] = useState(false);
 
   const loadBriefs = async () => {
     setLoadingBriefs(true);
@@ -59,13 +136,30 @@ export default function BriefPage() {
     setLoadingBriefs(false);
   };
 
+  // Load versions whenever clientName changes
+  useEffect(() => {
+    loadVersions(form.clientName);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.clientName]);
+
   useEffect(() => {
     loadBriefs();
-    // Read refs pre-filled from Scout via localStorage
+    // Lê referências do Scout (formato novo: scoutReferences)
     try {
-      const scoutRefs = localStorage.getItem("aiox-scout-refs");
-      if (scoutRefs) {
-        const refs: string[] = JSON.parse(scoutRefs);
+      const stored = localStorage.getItem("scoutReferences");
+      if (stored) {
+        const refs: string[] = JSON.parse(stored);
+        if (refs.length > 0) {
+          setScoutRefs(refs);
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Formato antigo: aiox-scout-refs (auto-importa)
+    try {
+      const oldRefs = localStorage.getItem("aiox-scout-refs");
+      if (oldRefs) {
+        const refs: string[] = JSON.parse(oldRefs);
         setForm(p => ({
           ...p,
           ref1: refs[0] ?? p.ref1,
@@ -73,14 +167,110 @@ export default function BriefPage() {
           ref3: refs[2] ?? p.ref3,
         }));
         localStorage.removeItem("aiox-scout-refs");
-        setStep(1); // jump to visual step
+        setStep(1);
       }
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const importScoutRefs = () => {
+    setForm(p => ({
+      ...p,
+      ref1: scoutRefs[0] ?? p.ref1,
+      ref2: scoutRefs[1] ?? p.ref2,
+      ref3: scoutRefs[2] ?? p.ref3,
+    }));
+    setScoutRefsImported(true);
+    try { localStorage.removeItem("scoutReferences"); } catch { /* ignore */ }
+    setScoutRefs([]);
+    setStep(1);
+    toast.info("Referências importadas do Scout");
+  };
 
   const set = (k: keyof typeof form, v: unknown) => setForm(p => ({ ...p, [k]: v }));
   const toggle = (k: "aesthetic" | "effects", v: string) =>
     set(k, form[k].includes(v) ? form[k].filter(x => x !== v) : [...form[k], v]);
+
+  const versionsKey = (name: string) =>
+    `aiox-brief-versions-${(name || "novo-projeto").toLowerCase().replace(/\s+/g, "-")}`;
+
+  const loadVersions = (name: string) => {
+    try {
+      const raw = localStorage.getItem(versionsKey(name));
+      setVersions(raw ? (JSON.parse(raw) as BriefVersion[]) : []);
+    } catch { setVersions([]); }
+  };
+
+  const saveVersion = (currentForm: typeof EMPTY_FORM) => {
+    const name = currentForm.clientName || "novo-projeto";
+    try {
+      const key = versionsKey(name);
+      const existing: BriefVersion[] = (() => {
+        try { return JSON.parse(localStorage.getItem(key) ?? "[]") as BriefVersion[]; }
+        catch { return []; }
+      })();
+      const newVer: BriefVersion = {
+        timestamp: new Date().toISOString(),
+        snapshot: { ...currentForm },
+      };
+      const updated = [newVer, ...existing].slice(0, MAX_VERSIONS);
+      localStorage.setItem(key, JSON.stringify(updated));
+      setVersions(updated);
+    } catch { /* quota */ }
+  };
+
+  const restoreVersion = (ver: BriefVersion) => {
+    setForm({ ...ver.snapshot });
+    setHistoryOpen(false);
+    setRestoredToast(true);
+    setTimeout(() => setRestoredToast(false), 2500);
+  };
+
+  const exportMarkdown = () => {
+    const refs = [form.ref1, form.ref2, form.ref3].filter(Boolean);
+    const md = `# Brief — ${form.clientName || "Novo Projeto"}
+
+## Cliente
+- **Nome:** ${form.clientName}
+- **Nicho:** ${form.niche}
+- **Público-alvo:** ${form.target}
+- **Diferencial:** ${form.differentiator}
+- **Tom de voz:** ${form.tone}
+
+## Objetivo
+- **Objetivo:** ${form.objective}
+- **CTA:** ${form.cta}
+
+## Visual
+- **Estética:** ${form.aesthetic.join(", ")}
+- **Referências:** ${refs.join(", ")}
+- **Background:** ${form.bg}
+- **Texto:** ${form.text}
+- **Accent:** ${form.accent}
+- **Heading Font:** ${form.headingFont}
+- **Body Font:** ${form.bodyFont}
+
+## Motion
+- **Velocidade:** ${form.motionSpeed}
+- **Efeitos:** ${form.effects.join(", ")}
+
+## Narrativa
+- **Protagonista:** ${form.protagonist}
+- **Problema:** ${form.problem}
+- **Headline:** ${form.headline}
+- **Tagline:** ${form.tagline}
+`;
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const slug = (form.clientName || "novo-projeto").toLowerCase().replace(/\s+/g, "-");
+    a.href = url;
+    a.download = `brief-${slug}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const loadBrief = (brief: SavedBrief) => {
     const lines = brief.content.split("\n");
@@ -111,6 +301,7 @@ export default function BriefPage() {
 
   const saveBrief = async () => {
     setSaving(true);
+    saveVersion(form);
     const slug = form.clientName.toLowerCase().replace(/\s+/g, "-") || "novo-projeto";
     const content = `# Creative Brief — ${form.clientName || "Novo Projeto"}
 
@@ -146,8 +337,23 @@ export default function BriefPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: slug, content }),
     });
+
+    try {
+      localStorage.setItem("activeBrief", JSON.stringify({
+        name: form.clientName || slug,
+        niche: form.niche,
+        id: slug,
+      }));
+    } catch { /* quota */ }
+
+    addActivity(
+      { type: "brief_saved", message: `Brief salvo: ${form.clientName || slug}` },
+      slug
+    );
+
     setSaving(false);
     setSaved(true);
+    toast.success("Brief salvo com sucesso!");
     setTimeout(() => setSaved(false), 2500);
     loadBriefs();
   };
@@ -233,28 +439,114 @@ export default function BriefPage() {
               </p>
             </div>
 
-            {/* Saved briefs toggle */}
-            <button
-              onClick={() => { setPanelOpen(p => !p); if (!panelOpen) loadBriefs(); }}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all mt-1 shrink-0"
-              style={{
-                border: "1px solid var(--border)",
-                background: panelOpen ? "var(--surface-2)" : "var(--surface-1)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              <FolderOpen size={13} />
-              Briefs salvos
-              {savedBriefs.length > 0 && (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
-                  style={{ background: "var(--accent-subtle)", color: "var(--accent)" }}
-                >
-                  {savedBriefs.length}
-                </span>
-              )}
-            </button>
+            <div className="flex items-center gap-2 mt-1 shrink-0">
+              {/* History button */}
+              <button
+                onClick={() => setHistoryOpen(p => !p)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-all"
+                style={{
+                  border: "1px solid var(--border)",
+                  background: historyOpen ? "var(--surface-2)" : "var(--surface-1)",
+                  color: "var(--text-secondary)",
+                }}
+                title="Ver histórico de versões"
+              >
+                <Clock size={13} />
+                <span className="text-xs">Histórico</span>
+                {versions.length > 0 && (
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
+                    style={{ background: "rgba(251,191,36,0.12)", color: "#FBBF24" }}
+                  >
+                    {versions.length}
+                  </span>
+                )}
+              </button>
+
+              {/* Saved briefs toggle */}
+              <button
+                onClick={() => { setPanelOpen(p => !p); if (!panelOpen) loadBriefs(); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all"
+                style={{
+                  border: "1px solid var(--border)",
+                  background: panelOpen ? "var(--surface-2)" : "var(--surface-1)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <FolderOpen size={13} />
+                Briefs salvos
+                {savedBriefs.length > 0 && (
+                  <span
+                    className="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
+                    style={{ background: "var(--accent-subtle)", color: "var(--accent)" }}
+                  >
+                    {savedBriefs.length}
+                  </span>
+                )}
+              </button>
+            </div>
           </motion.div>
+
+          {/* Restored toast */}
+          <AnimatePresence>
+            {restoredToast && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="mb-4 flex items-center gap-2 p-3 rounded-xl border"
+                style={{ borderColor: "rgba(0,230,118,0.25)", background: "rgba(0,230,118,0.07)" }}
+              >
+                <Check size={13} style={{ color: "var(--accent)" }} />
+                <span className="text-xs font-medium" style={{ color: "var(--accent)" }}>
+                  Versão restaurada com sucesso
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Scout references banner */}
+          {(scoutRefs.length > 0 || scoutRefsImported) && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-5"
+            >
+              {scoutRefsImported ? (
+                <div
+                  className="flex items-center gap-3 p-3 rounded-xl border"
+                  style={{ borderColor: "rgba(0,230,118,0.2)", background: "rgba(0,230,118,0.04)" }}
+                >
+                  <Check size={14} style={{ color: "var(--accent)" }} className="shrink-0" />
+                  <p className="text-xs" style={{ color: "var(--accent)" }}>
+                    Referências do Scout importadas com sucesso na aba Visual
+                  </p>
+                </div>
+              ) : (
+                <div
+                  className="flex items-center gap-3 p-3 rounded-xl border"
+                  style={{ borderColor: "rgba(245,158,11,0.25)", background: "rgba(245,158,11,0.05)" }}
+                >
+                  <Compass size={14} style={{ color: "#F59E0B" }} className="shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium" style={{ color: "#F59E0B" }}>
+                      Você tem {scoutRefs.length} referência{scoutRefs.length !== 1 ? "s" : ""} do Scout disponíve{scoutRefs.length !== 1 ? "is" : "l"}
+                    </p>
+                    <p className="text-[10px] mt-0.5" style={{ color: "var(--text-subtle)" }}>
+                      Clique em Importar para preencher os campos de referências visuais
+                    </p>
+                  </div>
+                  <button
+                    onClick={importScoutRefs}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                    style={{ background: "#F59E0B", color: "#020408" }}
+                  >
+                    Importar
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
 
           {/* Saved briefs panel */}
           <AnimatePresence>
@@ -334,7 +626,7 @@ export default function BriefPage() {
             )}
           </AnimatePresence>
 
-          {/* Step indicator */}
+          {/* Step indicator with progress dots */}
           <div className="flex items-center gap-1 mb-8 flex-wrap">
             {STEPS.map((s, i) => (
               <div key={s} className="flex items-center gap-1">
@@ -356,6 +648,7 @@ export default function BriefPage() {
                 >
                   {i < step && <Check size={10} style={{ color: "var(--accent)" }} />}
                   {s}
+                  <TabDot tabIndex={i} form={form} />
                 </button>
                 {i < STEPS.length - 1 && (
                   <ChevronRight size={12} style={{ color: "var(--text-subtle)" }} />
@@ -609,28 +902,160 @@ export default function BriefPage() {
                 Próximo <ChevronRight size={14} />
               </button>
             ) : (
-              <button
-                onClick={saveBrief}
-                disabled={saving}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
-                style={{
-                  background: "var(--accent)",
-                  color: "#020408",
-                  boxShadow: "0 0 20px rgba(0,230,118,0.4)",
-                }}
-              >
-                {saved
-                  ? <><Check size={14} /> Salvo!</>
-                  : saving
-                  ? "Salvando..."
-                  : <><Save size={14} /> Salvar Brief</>
-                }
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={exportMarkdown}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
+                  style={{
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text-secondary)",
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border-hover)";
+                    (e.currentTarget as HTMLElement).style.color = "var(--text-primary)";
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                    (e.currentTarget as HTMLElement).style.color = "var(--text-secondary)";
+                  }}
+                >
+                  <Download size={14} /> Exportar Markdown
+                </button>
+                <button
+                  onClick={saveBrief}
+                  disabled={saving}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
+                  style={{
+                    background: "var(--accent)",
+                    color: "#020408",
+                    boxShadow: "0 0 20px rgba(0,230,118,0.4)",
+                  }}
+                >
+                  {saved
+                    ? <><Check size={14} /> Salvo!</>
+                    : saving
+                    ? "Salvando..."
+                    : <><Save size={14} /> Salvar Brief</>
+                  }
+                </button>
+              </div>
             )}
           </div>
 
         </div>
       </main>
+
+      {/* ── History Drawer ── */}
+      <AnimatePresence>
+        {historyOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40"
+              style={{ background: "rgba(0,0,0,0.4)" }}
+              onClick={() => setHistoryOpen(false)}
+            />
+            {/* Drawer */}
+            <motion.aside
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", damping: 28, stiffness: 260 }}
+              className="fixed right-0 top-0 h-full z-50 flex flex-col"
+              style={{
+                width: 340,
+                background: "rgba(2,4,8,0.97)",
+                borderLeft: "1px solid var(--border)",
+                backdropFilter: "blur(16px)",
+              }}
+            >
+              {/* Drawer header */}
+              <div
+                className="flex items-center justify-between px-5 py-4 border-b"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <div className="flex items-center gap-2">
+                  <Clock size={14} style={{ color: "#FBBF24" }} />
+                  <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    Histórico de Versões
+                  </span>
+                </div>
+                <button
+                  onClick={() => setHistoryOpen(false)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
+                  style={{ color: "var(--text-subtle)", border: "1px solid var(--border)" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--text-muted)"}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--text-subtle)"}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+
+              {/* Drawer body */}
+              <div className="flex-1 overflow-y-auto px-4 py-4">
+                {versions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3 text-center">
+                    <Clock size={28} style={{ color: "var(--text-subtle)", opacity: 0.4 }} />
+                    <p className="text-sm font-medium" style={{ color: "var(--text-muted)" }}>
+                      Nenhuma versão salva
+                    </p>
+                    <p className="text-xs leading-relaxed" style={{ color: "var(--text-subtle)" }}>
+                      O histórico é criado automaticamente cada vez que você salva o brief. Até {MAX_VERSIONS} versões são mantidas.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[10px] mb-3" style={{ color: "var(--text-subtle)" }}>
+                      {versions.length} versão{versions.length !== 1 ? "ões" : ""} salva{versions.length !== 1 ? "s" : ""} · máx. {MAX_VERSIONS}
+                    </p>
+                    {versions.map((ver, i) => (
+                      <motion.div
+                        key={ver.timestamp}
+                        initial={{ opacity: 0, x: 8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                        className="flex items-center gap-3 p-3 rounded-xl border group"
+                        style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium truncate" style={{ color: "var(--text-secondary)" }}>
+                            {ver.snapshot.clientName || "Sem nome"}
+                          </p>
+                          <p className="text-[10px] mt-0.5 font-mono" style={{ color: "var(--text-subtle)" }}>
+                            {formatTs(ver.timestamp)}
+                          </p>
+                          {ver.snapshot.niche && (
+                            <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--text-subtle)", opacity: 0.7 }}>
+                              {ver.snapshot.niche}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => restoreVersion(ver)}
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                          style={{
+                            background: "rgba(251,191,36,0.08)",
+                            border: "1px solid rgba(251,191,36,0.2)",
+                            color: "#FBBF24",
+                          }}
+                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(251,191,36,0.15)"}
+                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(251,191,36,0.08)"}
+                        >
+                          Restaurar
+                        </button>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
