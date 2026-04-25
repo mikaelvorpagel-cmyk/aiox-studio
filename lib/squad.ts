@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { safeName } from "@/lib/utils";
+import { BUNDLED_AGENTS, BUNDLED_PLAYBOOK, BUNDLED_PROJECT_CONTEXT, BUNDLED_CHECKLIST, DEMO_BRIEF } from "@/lib/squad-data";
 
 const SQUAD_PATH = process.env.SQUAD_PATH ?? "";
 
@@ -73,21 +74,26 @@ function parseAgentMd(content: string, id: string): Agent {
 }
 
 export function validateConfig(): { ok: boolean; error?: string } {
-  if (!SQUAD_PATH) return { ok: false, error: "SQUAD_PATH não configurado no .env.local" };
-  if (!fs.existsSync(SQUAD_PATH)) return { ok: false, error: `Diretório não encontrado: ${SQUAD_PATH}` };
-  if (!fs.existsSync(path.join(SQUAD_PATH, "agents"))) return { ok: false, error: "Pasta 'agents' não encontrada no squad" };
+  // Bundled agents are always available as fallback
+  if (!SQUAD_PATH) return { ok: true, error: undefined };
+  if (!fs.existsSync(SQUAD_PATH)) return { ok: true, error: undefined }; // fallback to bundled
+  if (!fs.existsSync(path.join(SQUAD_PATH, "agents"))) return { ok: true, error: undefined }; // fallback
   return { ok: true };
 }
 
 export function getAgents(): Agent[] {
-  if (!validateConfig().ok) return [];
-  const agentsDir = path.join(SQUAD_PATH, "agents");
-  return fs.readdirSync(agentsDir)
-    .filter(f => f.endsWith(".md"))
-    .map(f => {
-      const id = f.replace(".md", "");
-      return parseAgentMd(readCached(path.join(agentsDir, f)), id);
-    });
+  if (SQUAD_PATH && fs.existsSync(path.join(SQUAD_PATH, "agents"))) {
+    try {
+      const agentsDir = path.join(SQUAD_PATH, "agents");
+      return fs.readdirSync(agentsDir)
+        .filter(f => f.endsWith(".md"))
+        .map(f => {
+          const id = f.replace(".md", "");
+          return parseAgentMd(readCached(path.join(agentsDir, f)), id);
+        });
+    } catch { /* fall through to bundled */ }
+  }
+  return BUNDLED_AGENTS;
 }
 
 export function getDataFile(filename: string): string {
@@ -96,28 +102,49 @@ export function getDataFile(filename: string): string {
 }
 
 export function getPlaybook(): string {
-  return getDataFile("premium-web-playbook.md");
+  if (SQUAD_PATH && fs.existsSync(path.join(SQUAD_PATH, "data", "premium-web-playbook.md"))) {
+    return getDataFile("premium-web-playbook.md");
+  }
+  return BUNDLED_PLAYBOOK;
 }
 
 export function getProjectContext(): string {
-  return getDataFile("project-context.md");
+  if (SQUAD_PATH && fs.existsSync(path.join(SQUAD_PATH, "data", "project-context.md"))) {
+    return getDataFile("project-context.md");
+  }
+  return BUNDLED_PROJECT_CONTEXT;
 }
 
 export function getChecklist(): string {
-  if (!SQUAD_PATH) return "";
-  return readCached(path.join(SQUAD_PATH, "checklists", "premium-site-checklist.md"));
+  if (SQUAD_PATH && fs.existsSync(path.join(SQUAD_PATH, "checklists", "premium-site-checklist.md"))) {
+    return readCached(path.join(SQUAD_PATH, "checklists", "premium-site-checklist.md"));
+  }
+  return BUNDLED_CHECKLIST;
 }
 
-export function getBriefs(): { name: string; content: string }[] {
-  if (!SQUAD_PATH) return [];
-  const briefsDir = path.join(SQUAD_PATH, "briefs");
-  if (!fs.existsSync(briefsDir)) return [];
-  return fs.readdirSync(briefsDir)
-    .filter(f => f.endsWith(".md"))
-    .map(f => ({
-      name: f.replace(".md", ""),
-      content: fs.readFileSync(path.join(briefsDir, f), "utf-8"),
-    }));
+export function getBriefs(): { name: string; content: string; previewPath?: string }[] {
+  let briefs: { name: string; content: string; previewPath?: string }[] = [];
+
+  if (SQUAD_PATH) {
+    const briefsDir = path.join(SQUAD_PATH, "briefs");
+    if (fs.existsSync(briefsDir)) {
+      try {
+        briefs = fs.readdirSync(briefsDir)
+          .filter(f => f.endsWith(".md"))
+          .map(f => ({
+            name: f.replace(".md", ""),
+            content: fs.readFileSync(path.join(briefsDir, f), "utf-8"),
+          }));
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Always include the demo brief so Vercel deployment works
+  if (!briefs.find(b => b.name === DEMO_BRIEF.name)) {
+    briefs = [{ name: DEMO_BRIEF.name, content: DEMO_BRIEF.content, previewPath: DEMO_BRIEF.previewPath }, ...briefs];
+  }
+
+  return briefs;
 }
 
 export function saveBrief(name: string, content: string): void {

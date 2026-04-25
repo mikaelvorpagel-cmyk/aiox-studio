@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import {
   FileText, Compass, Users, CheckSquare, Rocket,
-  ArrowRight, CheckCircle2, XCircle, AlertCircle, Plus,
+  ArrowRight, CheckCircle2, XCircle, AlertCircle, Plus, ExternalLink, Flame,
 } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 import type { Agent } from "@/lib/squad";
@@ -290,6 +290,47 @@ export default function Dashboard() {
                 );
               })}
             </div>
+          </motion.div>
+
+          {/* Demo output card */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18, duration: 0.4 }}
+            className="mb-6"
+          >
+            <h2 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--text-subtle)" }}>
+              Output gerado pelo squad
+            </h2>
+            <Link
+              href="/preview/emagrecimento"
+              className="group flex items-center gap-4 p-4 rounded-xl border transition-all duration-200"
+              style={{ borderColor: "rgba(255,104,53,0.2)", background: "rgba(255,104,53,0.04)" }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,104,53,0.4)";
+                (e.currentTarget as HTMLElement).style.background = "rgba(255,104,53,0.07)";
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,104,53,0.2)";
+                (e.currentTarget as HTMLElement).style.background = "rgba(255,104,53,0.04)";
+              }}
+            >
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(255,104,53,0.12)", border: "1px solid rgba(255,104,53,0.2)" }}>
+                <Flame size={16} style={{ color: "#FF6835" }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <p className="text-sm font-semibold" style={{ color: "#F5F0F8" }}>SLIM30 — Landing Page Emagrecimento</p>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: "rgba(255,104,53,0.15)", color: "#FF6835", border: "1px solid rgba(255,104,53,0.3)" }}>DEMO</span>
+                </div>
+                <p className="text-[11px]" style={{ color: "var(--text-subtle)" }}>
+                  Landing page premium gerada pelo squad · Termogênico feminino · Dark Luxury
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-all" style={{ background: "#FF6835", color: "#fff" }}>
+                <ExternalLink size={11} /> Ver preview
+              </div>
+            </Link>
           </motion.div>
 
           {/* Config status + Squad */}

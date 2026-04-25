@@ -44,23 +44,22 @@ export async function GET() {
     url:  "https://exa.ai/api",
   };
 
+  const hasLocalSquad = !!(process.env.SQUAD_PATH);
   const squad: ConfigItem = {
     key:    "SQUAD_PATH",
-    label:  "Squad Path",
-    status: squadConfig.ok ? "ok" : "missing",
-    value:  process.env.SQUAD_PATH,
-    hint:   squadConfig.error ?? "Caminho para o squad de agentes",
+    label:  "Squad Agents",
+    status: "ok",
+    value:  hasLocalSquad ? process.env.SQUAD_PATH : "bundled (11 agentes)",
+    hint:   hasLocalSquad ? "Squad carregado do sistema de arquivos" : "11 agentes embutidos — sem necessidade de configuração",
   };
 
   let agentCount = 0;
   let briefCount = 0;
   let kbCount = 0;
 
-  if (squadConfig.ok) {
-    try { agentCount = getAgents().length; } catch { /* ignore */ }
-    try { briefCount = getBriefs().length; } catch { /* ignore */ }
-    try { kbCount = listKBFiles().length; } catch { /* ignore */ }
-  }
+  try { agentCount = getAgents().length; } catch { /* ignore */ }
+  try { briefCount = getBriefs().length; } catch { /* ignore */ }
+  try { kbCount = listKBFiles().length; } catch { /* ignore */ }
 
   return NextResponse.json({
     provider: PROVIDER,

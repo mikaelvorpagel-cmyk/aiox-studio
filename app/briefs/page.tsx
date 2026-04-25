@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { FolderOpen, FileText, ArrowRight, Plus, Clock, CheckCircle2 } from "lucide-react";
+import { FolderOpen, FileText, ArrowRight, Plus, Clock, CheckCircle2, ExternalLink } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 
-interface Brief { name: string; content: string }
+interface Brief { name: string; content: string; previewPath?: string }
 
 function extractField(content: string, label: string): string {
   const match = content.match(new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`));
@@ -208,6 +208,17 @@ export default function BriefsPage() {
                           {activeBriefId === brief.name ? "Aberto" : "Abrir"}
                           <ArrowRight size={11} />
                         </Link>
+                        {brief.previewPath && (
+                          <Link
+                            href={brief.previewPath}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold transition-all"
+                            style={{ background: "rgba(255,104,53,0.08)", color: "#FF6835", border: "1px solid rgba(255,104,53,0.2)" }}
+                            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(255,104,53,0.15)"}
+                            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(255,104,53,0.08)"}
+                          >
+                            <ExternalLink size={9} /> Preview
+                          </Link>
+                        )}
                       </div>
                     </div>
                   </motion.div>
