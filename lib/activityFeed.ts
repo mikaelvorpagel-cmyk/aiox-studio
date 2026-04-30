@@ -39,6 +39,13 @@ export function addActivity(
   } catch {
     /* quota ignore */
   }
+
+  // Fire-and-forget backend persistence
+  fetch("/api/activity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entry, projectKey }),
+  }).catch(() => { /* non-critical, localStorage is primary */ });
 }
 
 export function getActivity(projectKey?: string): ActivityEntry[] {

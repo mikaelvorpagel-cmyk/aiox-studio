@@ -99,10 +99,15 @@ export default function ScoutPage() {
   /* ── KB helpers ─────────────────────────────────── */
   const loadKB = useCallback(async () => {
     setKbLoading(true);
-    const res = await fetch("/api/knowledge");
-    const data = await res.json();
-    setFiles(data.files ?? []);
-    setKbLoading(false);
+    try {
+      const res = await fetch("/api/knowledge");
+      const data = await res.json();
+      setFiles(data.files ?? []);
+    } catch {
+      /* KB não disponível, silencia mas não trava o loading */
+    } finally {
+      setKbLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadKB(); }, [loadKB]);
@@ -203,19 +208,22 @@ export default function ScoutPage() {
     setMetricsLoading(true);
     setMetricsError("");
     setMetricsSaved(false);
-
-    const res = await fetch("/api/metrics", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categories: selectedCats, save }),
-    });
-    const data = await res.json();
-    setMetricsLoading(false);
-
-    if (!res.ok) { setMetricsError(data.error ?? "Erro ao buscar métricas"); return; }
-    setMetricResults(data.results);
-    setLastUpdated(new Date().toLocaleTimeString("pt-BR"));
-    if (save) { setMetricsSaved(true); loadKB(); setTimeout(() => setMetricsSaved(false), 3000); }
+    try {
+      const res = await fetch("/api/metrics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categories: selectedCats, save }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setMetricsError(data.error ?? "Erro ao buscar métricas"); return; }
+      setMetricResults(data.results);
+      setLastUpdated(new Date().toLocaleTimeString("pt-BR"));
+      if (save) { setMetricsSaved(true); loadKB(); setTimeout(() => setMetricsSaved(false), 3000); }
+    } catch (err: unknown) {
+      setMetricsError(err instanceof Error ? err.message : "Erro de rede ao buscar métricas");
+    } finally {
+      setMetricsLoading(false);
+    }
   }, [metricsLoading, selectedCats, loadKB]);
 
   /* Auto-refresh logic */

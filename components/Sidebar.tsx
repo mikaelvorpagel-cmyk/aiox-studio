@@ -34,8 +34,7 @@ const AGENTES: NavItem[] = [
 
 const QUALIDADE: NavItem[] = [
   { href: "/checklist", icon: CheckSquare, label: "Checklist" },
-  { href: "/deploy",    icon: Rocket,      label: "Deploy"    },
-  { href: "/roadmap",   icon: Map,         label: "Roadmap"   },
+  { href: "/deploy",    icon: Rocket,      label: "Exportar"  },
 ];
 
 interface ActiveBrief { name: string; niche?: string }
@@ -186,7 +185,7 @@ function SidebarContent({ isActive, onNavClick }: { isActive: (href: string) => 
               { href: "/scout",     label: "Scout"   },
               { href: "/agents",    label: "Agentes" },
               { href: "/checklist", label: "QA"      },
-              { href: "/deploy",    label: "Deploy"  },
+              { href: "/deploy",    label: "Exportar" },
             ].map(step => {
               const active = isActive(step.href);
               return (

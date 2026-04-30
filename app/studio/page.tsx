@@ -7,7 +7,7 @@ import {
   Layers, Monitor, Tablet, Smartphone, Plus, ChevronUp, ChevronDown,
   Trash2, MessageSquare, Send, Loader2, Check, Palette,
   Globe, Zap, LayoutTemplate, RefreshCw, ExternalLink, Pen, Info,
-  Code2, Copy, PlayCircle, StopCircle, CheckCircle2, AlertCircle,
+  Code2, Copy, PlayCircle, StopCircle, CheckCircle2, AlertCircle, Download,
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────────────── */
@@ -191,6 +191,15 @@ export default function StudioPage() {
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sections)); } catch { /* quota */ }
   }, [sections]);
+
+  // Persist generated results for Export page
+  useEffect(() => {
+    if (Object.keys(genResults).length === 0) return;
+    try {
+      localStorage.setItem("aiox-gen-results", JSON.stringify(genResults));
+      localStorage.setItem("aiox-gen-sections", JSON.stringify(sections));
+    } catch { /* quota */ }
+  }, [genResults, sections]);
 
   // Load brief banner suggestion
   useEffect(() => {
@@ -436,6 +445,147 @@ Responda em português. Seja direto e prático.`;
     const code = genResults[id];
     if (code) navigator.clipboard.writeText(code).catch(() => {});
   }, [genResults]);
+
+  /* ─── Project export ──────────────────────────────────────────────── */
+  const buildProjectFiles = useCallback(() => {
+    const generated = sections.filter(s => genResults[s.id]);
+    const imports = generated.map(s => {
+      const name = s.name.replace(/\s+/g, "");
+      return `import ${name}Section from "@/components/${name}Section";`;
+    }).join("\n");
+    const jsxSections = generated.map(s => {
+      const name = s.name.replace(/\s+/g, "");
+      return `      <${name}Section />`;
+    }).join("\n");
+
+    const pageContent = `import type { Metadata } from "next";
+${imports}
+
+export const metadata: Metadata = { title: "Projeto AIOX Studio" };
+
+export default function Home() {
+  return (
+    <main className="min-h-screen bg-black">
+${jsxSections || "      {/* Nenhuma seção gerada ainda */}"}
+    </main>
+  );
+}
+`;
+    const layoutContent = `import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = { title: "Projeto AIOX Studio", description: "Gerado pelo AIOX Studio" };
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="pt-BR">
+      <body>{children}</body>
+    </html>
+  );
+}
+`;
+    const globalsCSS = `@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #f0f0f5;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans, system-ui, sans-serif);
+}
+`;
+    const pkgJson = JSON.stringify({
+      name: "aiox-studio-project",
+      version: "0.1.0",
+      private: true,
+      scripts: { dev: "next dev", build: "next build", start: "next start" },
+      dependencies: {
+        "next": "15.3.0",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "framer-motion": "^12.0.0",
+        "lucide-react": "^1.0.0",
+      },
+      devDependencies: {
+        "@tailwindcss/postcss": "^4",
+        "@types/node": "^20",
+        "@types/react": "^19",
+        "@types/react-dom": "^19",
+        "tailwindcss": "^4",
+        "typescript": "^5",
+      },
+    }, null, 2);
+    const tsconfigJson = JSON.stringify({
+      compilerOptions: {
+        target: "ES2017", lib: ["dom", "dom.iterable", "esnext"],
+        allowJs: true, skipLibCheck: true, strict: true,
+        noEmit: true, esModuleInterop: true, module: "esnext",
+        moduleResolution: "bundler", resolveJsonModule: true,
+        isolatedModules: true, jsx: "preserve", incremental: true,
+        paths: { "@/*": ["./*"] },
+      },
+      include: ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
+      exclude: ["node_modules"],
+    }, null, 2);
+    const nextConfig = `import type { NextConfig } from "next";\nconst nextConfig: NextConfig = {};\nexport default nextConfig;\n`;
+
+    const files: Record<string, string> = {
+      "package.json": pkgJson,
+      "tsconfig.json": tsconfigJson,
+      "next.config.ts": nextConfig,
+      "app/layout.tsx": layoutContent,
+      "app/page.tsx": pageContent,
+      "app/globals.css": globalsCSS,
+    };
+    generated.forEach(s => {
+      files[`components/${s.name.replace(/\s+/g, "")}Section.tsx`] = genResults[s.id];
+    });
+    return files;
+  }, [sections, genResults]);
+
+  const exportZip = useCallback(async () => {
+    const generated = sections.filter(s => genResults[s.id]);
+    if (generated.length === 0) return;
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    const files = buildProjectFiles();
+    Object.entries(files).forEach(([path, content]) => {
+      zip.file(path, content);
+    });
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "aiox-projeto.zip";
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [sections, genResults, buildProjectFiles]);
+
+  const openStackBlitz = useCallback(() => {
+    const files = buildProjectFiles();
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "https://stackblitz.com/run";
+    form.target = "_blank";
+    const add = (name: string, value: string) => {
+      const input = document.createElement("input");
+      input.type = "hidden"; input.name = name; input.value = value;
+      form.appendChild(input);
+    };
+    add("project[title]", "Projeto AIOX Studio");
+    add("project[description]", "Gerado pelo AIOX Studio");
+    add("project[template]", "nextjs");
+    Object.entries(files).forEach(([path, content]) => {
+      add(`project[files][${path}]`, content);
+    });
+    document.body.appendChild(form); form.submit(); document.body.removeChild(form);
+  }, [buildProjectFiles]);
+
+  const generatedCount = sections.filter(s => genResults[s.id]).length;
 
   /* ─── Computed ────────────────────────────────────────────────────── */
   const selectedSection = sections.find(s => s.id === selected) ?? null;
@@ -754,6 +904,27 @@ Responda em português. Seja direto e prático.`;
               >
                 {isGenerating ? <><StopCircle size={10} /> Parar</> : <><PlayCircle size={10} /> Gerar</>}
               </button>
+              {generatedCount > 0 && (
+                <>
+                  <div className="w-px h-4 shrink-0" style={{ background: "var(--border)" }} />
+                  <button
+                    onClick={exportZip}
+                    title={`Exportar ${generatedCount} seção(ões) como ZIP`}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
+                    style={{ background: "rgba(125,197,43,0.08)", border: "1px solid rgba(125,197,43,0.25)", color: "#7DC52B" }}
+                  >
+                    <Download size={10} /> ZIP
+                  </button>
+                  <button
+                    onClick={openStackBlitz}
+                    title="Abrir projeto no StackBlitz"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
+                    style={{ background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.25)", color: "#60A5FA" }}
+                  >
+                    <ExternalLink size={10} /> Preview
+                  </button>
+                </>
+              )}
             </div>
           </div>
 

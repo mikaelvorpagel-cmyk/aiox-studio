@@ -80,6 +80,8 @@ export default function AgentsPage() {
       if (list.length > 0) {
         addLog(`${list.length} agente${list.length !== 1 ? "s" : ""} carregado${list.length !== 1 ? "s" : ""} com sucesso.`);
       }
+    }).catch((err: unknown) => {
+      addLog(`⚠️ Erro ao carregar agentes: ${err instanceof Error ? err.message : String(err)}`);
     });
     fetch("/api/brief").then(r => r.json()).then(data => {
       const briefs: { name: string; content: string }[] = data.briefs ?? [];
@@ -89,7 +91,9 @@ export default function AgentsPage() {
       const brief = { name: latest.name, niche: nicheMatch?.[1]?.trim() };
       setActiveBrief(brief);
       addLog(`Brief ativo carregado: "${brief.name}"${brief.niche ? ` [${brief.niche}]` : ""}`);
-    }).catch(() => {});
+    }).catch((err: unknown) => {
+      addLog(`⚠️ Brief não carregado: ${err instanceof Error ? err.message : "Erro de rede"}`);
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
