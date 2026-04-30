@@ -7,6 +7,7 @@ import {
   Layers, Monitor, Tablet, Smartphone, Plus, ChevronUp, ChevronDown,
   Trash2, MessageSquare, Send, Loader2, Check, Palette,
   Globe, Zap, LayoutTemplate, RefreshCw, ExternalLink, Pen, Info,
+  Code2, Copy, PlayCircle, StopCircle, CheckCircle2, AlertCircle,
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────────────── */
@@ -26,6 +27,7 @@ const SECTION_TYPES = {
 type SectionType = keyof typeof SECTION_TYPES;
 type SectionStatus = "draft" | "in-progress" | "done";
 type Device = "desktop" | "tablet" | "mobile";
+type GenStatus = "idle" | "pending" | "generating" | "done" | "error";
 
 const STATUS_DOT: Record<SectionStatus, string> = {
   "draft":       "rgba(156,163,175,0.5)",
@@ -176,6 +178,12 @@ export default function StudioPage() {
   const [zoom, setZoom] = useState(100);
   const [briefBanner, setBriefBanner] = useState<{ name: string; niche?: string; siteType?: string } | null>(null);
   const [briefBannerDismissed, setBriefBannerDismissed] = useState(false);
+  // ─── Generation state ──────────────────────────────────────────────
+  const [genResults, setGenResults] = useState<Record<string, string>>({});
+  const [genStatus, setGenStatus] = useState<Record<string, GenStatus>>({});
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showCode, setShowCode] = useState(false);
+  const stopGenRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
 
@@ -370,6 +378,49 @@ Responda em português. Seja direto e prático.`;
       setChatLoading(false);
     }
   }, [input, chatLoading, messages, sections]);
+
+  /* ─── Generation ─────────────────────────────────────────────────── */
+  const generateSection = useCallback(async (sec: Section): Promise<boolean> => {
+    setGenStatus(prev => ({ ...prev, [sec.id]: "generating" }));
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: { order: sec.order, name: sec.name, type: sec.type, agent: sec.agent, effects: sec.effects, notes: sec.notes } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Erro desconhecido");
+      setGenResults(prev => ({ ...prev, [sec.id]: data.code }));
+      setGenStatus(prev => ({ ...prev, [sec.id]: "done" }));
+      updateSection(sec.id, { status: "done" });
+      return true;
+    } catch {
+      setGenStatus(prev => ({ ...prev, [sec.id]: "error" }));
+      return false;
+    }
+  }, [updateSection]);
+
+  const generateAll = useCallback(async () => {
+    if (isGenerating) { stopGenRef.current = true; return; }
+    stopGenRef.current = false;
+    setIsGenerating(true);
+    setShowCode(false);
+    const statuses: Record<string, GenStatus> = {};
+    sections.forEach(s => { statuses[s.id] = "pending"; });
+    setGenStatus(statuses);
+    for (const sec of sections) {
+      if (stopGenRef.current) break;
+      await generateSection(sec);
+      if (!stopGenRef.current) await new Promise(r => setTimeout(r, 4500));
+    }
+    setIsGenerating(false);
+    stopGenRef.current = false;
+  }, [isGenerating, sections, generateSection]);
+
+  const copySectionCode = useCallback((id: string) => {
+    const code = genResults[id];
+    if (code) navigator.clipboard.writeText(code).catch(() => {});
+  }, [genResults]);
 
   /* ─── Computed ────────────────────────────────────────────────────── */
   const selectedSection = sections.find(s => s.id === selected) ?? null;
@@ -658,17 +709,35 @@ Responda em português. Seja direto e prático.`;
               )}
             </div>
 
-            {/* Zoom */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-mono" style={{ color: "var(--text-subtle)" }}>{zoom}%</span>
-              <button onClick={() => setZoom(z => Math.max(25, z - 25))} className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/5" style={{ color: "var(--text-subtle)" }}>
-                <span className="text-sm leading-none">−</span>
-              </button>
-              <button onClick={() => setZoom(z => Math.min(150, z + 25))} className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/5" style={{ color: "var(--text-subtle)" }}>
-                <span className="text-sm leading-none">+</span>
-              </button>
-              <button onClick={() => setZoom(100)} className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/5" style={{ color: "var(--text-subtle)" }}>
-                <RefreshCw size={10} />
+            {/* Zoom + Gerar */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-mono" style={{ color: "var(--text-subtle)" }}>{zoom}%</span>
+                <button onClick={() => setZoom(z => Math.max(25, z - 25))} className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/5" style={{ color: "var(--text-subtle)" }}>
+                  <span className="text-sm leading-none">−</span>
+                </button>
+                <button onClick={() => setZoom(z => Math.min(150, z + 25))} className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/5" style={{ color: "var(--text-subtle)" }}>
+                  <span className="text-sm leading-none">+</span>
+                </button>
+                <button onClick={() => setZoom(100)} className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/5" style={{ color: "var(--text-subtle)" }}>
+                  <RefreshCw size={10} />
+                </button>
+              </div>
+              <div className="w-px h-4 shrink-0" style={{ background: "var(--border)" }} />
+              {isGenerating && (
+                <span className="text-[10px] font-mono" style={{ color: "var(--text-subtle)" }}>
+                  {Object.values(genStatus).filter(s => s === "done").length}/{sections.length}
+                </span>
+              )}
+              <button
+                onClick={generateAll}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
+                style={isGenerating
+                  ? { background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" }
+                  : { background: "rgba(0,230,118,0.08)", border: "1px solid rgba(0,230,118,0.25)", color: "var(--accent)" }
+                }
+              >
+                {isGenerating ? <><StopCircle size={10} /> Parar</> : <><PlayCircle size={10} /> Gerar</>}
               </button>
             </div>
           </div>
@@ -787,6 +856,40 @@ Responda em português. Seja direto e prático.`;
                             {sec.status === "done" ? "pronto" : sec.status === "in-progress" ? "em progresso" : "rascunho"}
                           </span>
                         </div>
+
+                        {/* Generation status badge */}
+                        {genStatus[sec.id] && genStatus[sec.id] !== "idle" && (
+                          <div className="absolute bottom-2 right-3">
+                            {genStatus[sec.id] === "pending" && (
+                              <span className="text-[8px] flex items-center gap-1" style={{ color: "var(--text-subtle)" }}>
+                                <Loader2 size={8} className="animate-spin" /> aguardando
+                              </span>
+                            )}
+                            {genStatus[sec.id] === "generating" && (
+                              <span className="text-[8px] flex items-center gap-1" style={{ color: "#FBBF24" }}>
+                                <Loader2 size={8} className="animate-spin" style={{ color: "#FBBF24" }} /> gerando...
+                              </span>
+                            )}
+                            {genStatus[sec.id] === "done" && (
+                              <button
+                                onClick={e => { e.stopPropagation(); setSelected(sec.id); setShowCode(true); }}
+                                className="text-[8px] flex items-center gap-1 px-1.5 py-0.5 rounded-full"
+                                style={{ background: "rgba(0,230,118,0.12)", border: "1px solid rgba(0,230,118,0.3)", color: "var(--accent)" }}
+                              >
+                                <CheckCircle2 size={8} /> código
+                              </button>
+                            )}
+                            {genStatus[sec.id] === "error" && (
+                              <button
+                                onClick={e => { e.stopPropagation(); generateSection(sec); }}
+                                className="text-[8px] flex items-center gap-1 px-1.5 py-0.5 rounded-full"
+                                style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#F87171" }}
+                              >
+                                <AlertCircle size={8} /> retry
+                              </button>
+                            )}
+                          </div>
+                        )}
 
                         {/* Add section hint on hover */}
                         <div
@@ -951,6 +1054,71 @@ Responda em português. Seja direto e prático.`;
               </div>
             )}
           </div>
+
+          {/* ── Generated Code Panel ── */}
+          {selectedSection && (genResults[selectedSection.id] || genStatus[selectedSection.id] === "generating" || genStatus[selectedSection.id] === "error") && (
+            <div className="border-b flex flex-col" style={{ borderColor: "var(--border)", maxHeight: showCode ? 240 : "auto" }}>
+              <button
+                onClick={() => setShowCode(v => !v)}
+                className="flex items-center justify-between px-4 py-2.5 w-full text-left"
+                style={{ borderBottom: showCode ? "1px solid var(--border)" : "none" }}
+              >
+                <div className="flex items-center gap-2">
+                  <Code2 size={11} style={{ color: genStatus[selectedSection.id] === "done" ? "var(--accent)" : genStatus[selectedSection.id] === "error" ? "#F87171" : "#FBBF24" }} />
+                  <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-subtle)" }}>
+                    Código Gerado
+                  </span>
+                  {genStatus[selectedSection.id] === "generating" && (
+                    <Loader2 size={10} className="animate-spin" style={{ color: "#FBBF24" }} />
+                  )}
+                  {genStatus[selectedSection.id] === "done" && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full" style={{ background: "rgba(0,230,118,0.1)", color: "var(--accent)", border: "1px solid rgba(0,230,118,0.2)" }}>
+                      pronto
+                    </span>
+                  )}
+                </div>
+                {genResults[selectedSection.id] && (
+                  <button
+                    onClick={e => { e.stopPropagation(); copySectionCode(selectedSection.id); }}
+                    className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded transition-all"
+                    style={{ border: "1px solid var(--border)", color: "var(--text-subtle)" }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--accent)"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(0,230,118,0.3)"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--text-subtle)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
+                  >
+                    <Copy size={8} /> Copiar
+                  </button>
+                )}
+              </button>
+              {showCode && (
+                <div className="overflow-y-auto" style={{ maxHeight: 200 }}>
+                  {genResults[selectedSection.id] ? (
+                    <>
+                      <div className="px-3 py-1 shrink-0" style={{ background: "rgba(0,0,0,0.3)", borderBottom: "1px solid var(--border)" }}>
+                        <span className="text-[8px] font-mono" style={{ color: "var(--text-subtle)" }}>
+                          {selectedSection.name.replace(/\s/g, "")}Section.tsx
+                        </span>
+                      </div>
+                      <pre className="text-[8px] leading-relaxed p-3 font-mono whitespace-pre-wrap break-words" style={{ color: "var(--text-secondary)" }}>
+                        {genResults[selectedSection.id]}
+                      </pre>
+                    </>
+                  ) : genStatus[selectedSection.id] === "generating" ? (
+                    <div className="flex items-center gap-2 p-4">
+                      <Loader2 size={12} className="animate-spin" style={{ color: "#FBBF24" }} />
+                      <span className="text-[10px]" style={{ color: "var(--text-subtle)" }}>Gerando componente...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 p-4">
+                      <AlertCircle size={12} style={{ color: "#F87171" }} />
+                      <button onClick={() => generateSection(selectedSection)} className="text-[10px]" style={{ color: "#F87171" }}>
+                        Tentar novamente
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── AI Chat ── */}
           <div className="flex flex-col flex-1 min-h-0">
