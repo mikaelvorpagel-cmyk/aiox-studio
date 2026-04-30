@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { FolderOpen, FileText, ArrowRight, Plus, Clock, CheckCircle2, ExternalLink } from "lucide-react";
+import { FolderOpen, FileText, ArrowRight, Plus, Clock, CheckCircle2, ExternalLink, Trash2, AlertTriangle } from "lucide-react";
 import { Sidebar } from "@/components/Sidebar";
 
 interface Brief { name: string; content: string; previewPath?: string }
+
+const DEMO_BRIEF_NAME = "slim30-termogenico";
 
 function extractField(content: string, label: string): string {
   const match = content.match(new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`));
@@ -17,13 +19,19 @@ export default function BriefsPage() {
   const [briefs, setBriefs] = useState<Brief[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeBriefId, setActiveBriefId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadBriefs = () => {
+    setLoading(true);
     fetch("/api/brief")
       .then(r => r.json())
       .then(data => { setBriefs(data.briefs ?? []); setLoading(false); })
       .catch(() => setLoading(false));
+  };
 
+  useEffect(() => {
+    loadBriefs();
     try {
       const stored = localStorage.getItem("activeBrief");
       if (stored) {
@@ -31,7 +39,27 @@ export default function BriefsPage() {
         setActiveBriefId(parsed.id ?? null);
       }
     } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleDelete = async (name: string) => {
+    setDeleting(name);
+    try {
+      await fetch("/api/brief", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (activeBriefId === name) {
+        try { localStorage.removeItem("activeBrief"); } catch { /* ignore */ }
+        setActiveBriefId(null);
+      }
+      setBriefs(prev => prev.filter(b => b.name !== name));
+    } catch { /* ignore */ } finally {
+      setDeleting(null);
+      setConfirmDelete(null);
+    }
+  };
 
   const openBrief = (brief: Brief) => {
     const client = extractField(brief.content, "Nome");
@@ -218,6 +246,47 @@ export default function BriefsPage() {
                           >
                             <ExternalLink size={9} /> Preview
                           </Link>
+                        )}
+                        {brief.name !== DEMO_BRIEF_NAME && (
+                          confirmDelete === brief.name ? (
+                            <div className="flex items-center gap-1.5 mt-1 p-2 rounded-lg" style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)" }}>
+                              <AlertTriangle size={11} style={{ color: "#F87171" }} />
+                              <span className="text-[10px]" style={{ color: "#F87171" }}>Excluir?</span>
+                              <button
+                                onClick={() => handleDelete(brief.name)}
+                                disabled={deleting === brief.name}
+                                className="text-[10px] px-2 py-0.5 rounded font-semibold transition-all"
+                                style={{ background: "rgba(248,113,113,0.2)", color: "#F87171", border: "1px solid rgba(248,113,113,0.4)" }}
+                              >
+                                {deleting === brief.name ? "..." : "Sim"}
+                              </button>
+                              <button
+                                onClick={() => setConfirmDelete(null)}
+                                className="text-[10px] px-2 py-0.5 rounded transition-all"
+                                style={{ color: "var(--text-subtle)", border: "1px solid var(--border)" }}
+                              >
+                                Não
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDelete(brief.name)}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] opacity-0 group-hover:opacity-100 transition-all"
+                              style={{ color: "rgba(248,113,113,0.5)", border: "1px solid transparent" }}
+                              onMouseEnter={e => {
+                                (e.currentTarget as HTMLElement).style.color = "#F87171";
+                                (e.currentTarget as HTMLElement).style.borderColor = "rgba(248,113,113,0.3)";
+                                (e.currentTarget as HTMLElement).style.background = "rgba(248,113,113,0.06)";
+                              }}
+                              onMouseLeave={e => {
+                                (e.currentTarget as HTMLElement).style.color = "rgba(248,113,113,0.5)";
+                                (e.currentTarget as HTMLElement).style.borderColor = "transparent";
+                                (e.currentTarget as HTMLElement).style.background = "transparent";
+                              }}
+                            >
+                              <Trash2 size={10} /> Excluir
+                            </button>
+                          )
                         )}
                       </div>
                     </div>

@@ -155,3 +155,14 @@ export function saveBrief(name: string, content: string): void {
   if (!safe) throw new Error("Nome de brief inválido");
   fs.writeFileSync(path.join(briefsDir, `${safe}.md`), content, "utf-8");
 }
+
+export function deleteBrief(name: string): void {
+  if (!SQUAD_PATH) throw new Error("SQUAD_PATH não configurado");
+  const safe = safeName(name);
+  if (!safe) throw new Error("Nome de brief inválido");
+  const filePath = path.join(SQUAD_PATH, "briefs", `${safe}.md`);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    fileCache.delete(filePath);
+  }
+}
