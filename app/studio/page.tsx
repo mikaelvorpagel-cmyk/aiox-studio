@@ -354,26 +354,41 @@ Responda em português. Seja direto e prático.`;
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          agentId: "web-designer",
-          messages: [
-            { role: "user", content: systemContext },
-            { role: "assistant", content: "Entendido. Estou pronto para ajudar com o projeto." },
-            ...newMessages.map(m => ({ role: m.role, content: m.content })),
-          ],
+          agent: {
+            id: "web-designer",
+            name: "Vex",
+            title: "Web Designer",
+            role: "Web designer especializado em sistemas visuais para landing pages",
+            style: "Visual-first, detalhista, orientado a intenção",
+            identity: "Designer que define o sistema visual do projeto",
+            focus: "Criar e manter consistência visual do projeto",
+            systemPrompt: systemContext,
+          },
+          messages: newMessages,
         }),
       });
 
-      if (!res.ok) throw new Error("API error");
-      const data = await res.json();
-      const reply = data.content ?? data.message ?? "Sem resposta.";
-      const actions = parseActions(reply);
-      setMessages([...newMessages, { role: "assistant", content: reply }]);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(err.error ?? `Erro ${res.status}`);
+      }
+
+      // Response is a ReadableStream of text, not JSON
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let full = "";
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        full += decoder.decode(value);
+        setMessages([...newMessages, { role: "assistant", content: full }]);
+      }
+
+      const actions = parseActions(full);
       if (actions.length > 0) setPendingActions(prev => [...prev, ...actions]);
-    } catch {
-      setMessages([...newMessages, {
-        role: "assistant",
-        content: "Erro ao conectar com o agente. Verifique a configuração da API.",
-      }]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao conectar com o agente.";
+      setMessages([...newMessages, { role: "assistant", content: `⚠️ ${msg}` }]);
     } finally {
       setChatLoading(false);
     }

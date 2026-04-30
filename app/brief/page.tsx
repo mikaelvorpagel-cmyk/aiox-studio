@@ -291,8 +291,25 @@ export default function BriefPage() {
   };
 
   const loadBrief = (brief: SavedBrief) => {
+    // Try JSON snapshot saved alongside brief (accurate, full-fidelity restore)
+    try {
+      const stored = localStorage.getItem(`aiox-brief-form-${brief.name}`);
+      if (stored) {
+        const snapshot = JSON.parse(stored) as typeof EMPTY_FORM;
+        setForm({ ...EMPTY_FORM, ...snapshot });
+        setStep(0); setPanelOpen(false);
+        return;
+      }
+    } catch { /* fall through to markdown parsing */ }
+
+    // Fallback: parse markdown for basic fields (older briefs without JSON snapshot)
     const lines = brief.content.split("\n");
-    const get = (label: string) => lines.find(l => l.includes(`**${label}:**`))?.split(":**")?.[1]?.trim() ?? "";
+    const get = (label: string) => {
+      const line = lines.find(l => l.includes(`**${label}:**`));
+      if (!line) return "";
+      const idx = line.indexOf(`**${label}:**`);
+      return line.slice(idx + label.length + 5).trim();
+    };
     const getList = (label: string) => get(label).split(",").map(s => s.trim()).filter(Boolean);
     setForm(p => ({
       ...p,
@@ -359,6 +376,8 @@ export default function BriefPage() {
     setSaving(true);
     saveVersion(form);
     const slug = form.clientName.toLowerCase().replace(/\s+/g, "-") || "novo-projeto";
+    // Save form JSON to localStorage so loadBrief can restore all fields accurately
+    try { localStorage.setItem(`aiox-brief-form-${slug}`, JSON.stringify(form)); } catch { /* quota */ }
     await fetch("/api/brief", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
