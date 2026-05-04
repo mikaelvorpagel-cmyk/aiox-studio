@@ -236,6 +236,24 @@ export default function BriefPage() {
     setTimeout(() => setRestoredToast(false), 2500);
   };
 
+  const deleteVersion = (timestamp: string) => {
+    const name = form.clientName || "novo-projeto";
+    try {
+      const key = versionsKey(name);
+      const updated = versions.filter(v => v.timestamp !== timestamp);
+      localStorage.setItem(key, JSON.stringify(updated));
+      setVersions(updated);
+    } catch { /* quota */ }
+  };
+
+  const clearAllVersions = () => {
+    const name = form.clientName || "novo-projeto";
+    try {
+      localStorage.removeItem(versionsKey(name));
+      setVersions([]);
+    } catch { /* quota */ }
+  };
+
   const refs = [form.ref1, form.ref2, form.ref3, form.ref4, form.ref5].filter(Boolean);
 
   const exportMarkdown = () => {
@@ -1042,7 +1060,20 @@ export default function BriefPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <p className="text-[10px] mb-3" style={{ color: "var(--text-subtle)" }}>{versions.length} versão{versions.length !== 1 ? "ões" : ""} · máx. {MAX_VERSIONS}</p>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[10px]" style={{ color: "var(--text-subtle)" }}>
+                        {versions.length} versão{versions.length !== 1 ? "ões" : ""} · máx. {MAX_VERSIONS}
+                      </p>
+                      <button
+                        onClick={clearAllVersions}
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded transition-all"
+                        style={{ color: "rgba(248,113,113,0.5)", border: "1px solid transparent" }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#F87171"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(248,113,113,0.3)"; (e.currentTarget as HTMLElement).style.background = "rgba(248,113,113,0.06)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "rgba(248,113,113,0.5)"; (e.currentTarget as HTMLElement).style.borderColor = "transparent"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                      >
+                        <Trash2 size={9} /> Limpar tudo
+                      </button>
+                    </div>
                     {versions.map((ver, i) => (
                       <motion.div key={ver.timestamp} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
                         className="flex items-center gap-3 p-3 rounded-xl border group" style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
@@ -1052,12 +1083,24 @@ export default function BriefPage() {
                           <p className="text-[10px] mt-0.5 font-mono" style={{ color: "var(--text-subtle)" }}>{formatTs(ver.timestamp)}</p>
                           {ver.snapshot.niche && <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--text-subtle)", opacity: 0.7 }}>{ver.snapshot.niche}</p>}
                         </div>
-                        <button onClick={() => restoreVersion(ver)}
-                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                          style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", color: "#FBBF24" }}
-                          onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(251,191,36,0.15)"}
-                          onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(251,191,36,0.08)"}
-                        >Restaurar</button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button onClick={() => restoreVersion(ver)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                            style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", color: "#FBBF24" }}
+                            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "rgba(251,191,36,0.15)"}
+                            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "rgba(251,191,36,0.08)"}
+                          >Restaurar</button>
+                          <button
+                            onClick={() => deleteVersion(ver.timestamp)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                            style={{ color: "rgba(248,113,113,0.5)", border: "1px solid transparent" }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#F87171"; (e.currentTarget as HTMLElement).style.borderColor = "rgba(248,113,113,0.35)"; (e.currentTarget as HTMLElement).style.background = "rgba(248,113,113,0.08)"; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "rgba(248,113,113,0.5)"; (e.currentTarget as HTMLElement).style.borderColor = "transparent"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                            title="Excluir versão"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </div>
                       </motion.div>
                     ))}
                   </div>
