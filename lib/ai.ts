@@ -42,6 +42,7 @@ function nextGeminiKey(): string {
 
 /* ── generateText — single non-streaming call (for section generation) ─
    On 429 rate limit, retries with the next Gemini key automatically.
+   If all Gemini keys are exhausted, falls back to Anthropic if available.
 ──────────────────────────────────────────────────────────────────────── */
 export async function generateText(
   system: string,
@@ -67,13 +68,17 @@ export async function generateText(
       } catch (err: unknown) {
         lastError = err;
         const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes("429") && !msg.toLowerCase().includes("rate")) throw err;
+        if (!msg.includes("429") && !msg.toLowerCase().includes("rate") && !msg.toLowerCase().includes("quota")) throw err;
       }
     }
-    throw lastError;
+    // All Gemini keys exhausted — try Anthropic fallback
+    const hasAnthropic = process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== "sua-chave-aqui";
+    const hasVertex = !!process.env.GOOGLE_CLOUD_PROJECT_ID;
+    if (!hasAnthropic && !hasVertex) throw lastError;
+    // fall through to Anthropic
   }
 
-  if (provider === "anthropic") {
+  if (provider === "anthropic" || (provider === "gemini" && (process.env.ANTHROPIC_API_KEY || process.env.GOOGLE_CLOUD_PROJECT_ID))) {
     const msg = await anthropic.messages.create({
       model: MODEL,
       max_tokens: maxTokens,
