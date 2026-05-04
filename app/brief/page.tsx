@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sidebar } from "@/components/Sidebar";
-import { Save, ChevronRight, ChevronLeft, Check, FileText, FolderOpen, Trash2, Clock, Info, Compass, Download, X } from "lucide-react";
+import { Save, ChevronRight, ChevronLeft, Check, FileText, FolderOpen, Trash2, Clock, Info, Compass, Download, X, Layers, ArrowRight } from "lucide-react";
 import { addActivity } from "@/lib/activityFeed";
 import { useToast } from "@/components/Toast";
 
@@ -149,6 +150,7 @@ function formatTs(iso: string): string {
 /* ── Componente principal ───────────────────────────────────── */
 export default function BriefPage() {
   const toast = useToast();
+  const router = useRouter();
   const [step, setStep]   = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
@@ -394,6 +396,11 @@ export default function BriefPage() {
     toast.success("Brief salvo com sucesso!");
     setTimeout(() => setSaved(false), 2500);
     loadBriefs();
+  };
+
+  const startProduction = async () => {
+    if (!saved && form.clientName) await saveBrief();
+    router.push("/studio");
   };
 
   /* ── Helpers de renderização ────────────────────────────── */
@@ -970,7 +977,7 @@ export default function BriefPage() {
                 Próximo <ChevronRight size={14} />
               </button>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
                   onClick={exportMarkdown}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all"
@@ -984,9 +991,19 @@ export default function BriefPage() {
                   onClick={saveBrief}
                   disabled={saving}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
-                  style={{ background: "var(--accent)", color: "#020408", boxShadow: "0 0 20px rgba(0,230,118,0.4)" }}
+                  style={{ border: "1px solid var(--border-accent)", background: "transparent", color: "var(--accent)" }}
                 >
                   {saved ? <><Check size={14} /> Salvo!</> : saving ? "Salvando..." : <><Save size={14} /> Salvar Brief</>}
+                </button>
+                <button
+                  onClick={startProduction}
+                  disabled={saving}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all disabled:opacity-60"
+                  style={{ background: "var(--accent)", color: "#020408", boxShadow: "0 0 24px rgba(0,230,118,0.45)" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.boxShadow = "0 0 32px rgba(0,230,118,0.65)"}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.boxShadow = "0 0 24px rgba(0,230,118,0.45)"}
+                >
+                  <Layers size={14} /> Iniciar Produção <ArrowRight size={13} />
                 </button>
               </div>
             )}
