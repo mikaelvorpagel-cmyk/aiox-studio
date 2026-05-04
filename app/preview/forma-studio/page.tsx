@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import SectionRenderer from "@/components/studio/SectionRenderer";
+import { SectionRenderer } from "@/components/studio/SectionRenderer";
 import type { PageSection } from "@/lib/page-model";
 
 const SECTIONS: PageSection[] = [
